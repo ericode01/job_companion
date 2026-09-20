@@ -1,16 +1,17 @@
 "use client";
 
 import type { ApplicationStatus } from "@jd/core/shared";
-import { AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, GripVertical, KanbanSquare, Mail, MailCheck, Search, Undo2, X } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, GripVertical, KanbanSquare, Mail, MailCheck, Plus, Search, Undo2, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActionStrip } from "@/components/ActionStrip";
+import { AddApplicationDialog } from "@/components/AddApplicationDialog";
 import { ApplicationPanel } from "@/components/ApplicationPanel";
 import { ReviewList } from "@/components/ReviewList";
 import { RoundChips } from "@/components/RoundTracker";
 import { FitBadge } from "@/components/Status";
-import { ConfirmDialog, EmptyState, Skeleton } from "@/components/ui";
+import { ConfirmDialog, EmptyState, type Feedback, FeedbackBar, Skeleton } from "@/components/ui";
 import { formatComp, timeAgo } from "@/lib/format";
 import { shortDate } from "@/lib/mail-labels";
 import { groupColumn } from "@/lib/pipeline-groups";
@@ -29,6 +30,7 @@ const COLUMNS: { key: string; title: string; statuses: ApplicationStatus[] }[] =
 /** Per-browser conveniences: they may be blocked, and the page must work without them. */
 const REJECTED_KEY = "jc:rejected-open";
 const SCOPE_KEY = "jc:pipeline-search";
+const STAGE_KEY = "jc:pipeline-stage";
 function read(key: string): string | null {
   try {
     return localStorage.getItem(key);
@@ -56,6 +58,19 @@ function syncUrl(params: { scope: number | null; q: string; app: number | null }
 
 const hay = (...parts: (string | null | undefined)[]) => parts.filter(Boolean).join(" ").toLowerCase();
 
+/** The board has three shapes: one stage on a phone, a sideways row on a tablet, a grid at xl. */
+function useMedia(query: string): boolean {
+  const [matches, setMatches] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia(query);
+    const sync = () => setMatches(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, [query]);
+  return matches;
+}
+
 export function PipelineBoard() {
   const [data, setData] = useState<PipelineData | null>(null);
   const [dragging, setDragging] = useState<number | null>(null);
@@ -66,6 +81,11 @@ export function PipelineBoard() {
   const [rejectedOpen, setRejectedOpen] = useState(false);
   const [scope, setScope] = useState<number | null>(null);
   const [q, setQ] = useState("");
+  const [feedback, setFeedback] = useState<Feedback | null>(null);
+  const [stage, setStage] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const phone = useMedia("(max-width: 767px)");
+  const wide = useMedia("(min-width: 1280px)");
 
   const router = useRouter();
   const load = useCallback(async () => {
@@ -89,6 +109,7 @@ export function PipelineBoard() {
     const chosen = Number(searchParam || (fromUrl ? "" : read(SCOPE_KEY)) || Number.NaN);
     if (Number.isInteger(chosen) && chosen > 0) setScope(chosen);
     setQ(url.searchParams.get("q") ?? "");
+    setStage(read(STAGE_KEY));
   }, [load]);
 
   const openPanel = (id: number | null) => {
@@ -100,6 +121,12 @@ export function PipelineBoard() {
     setScope(next);
     write(SCOPE_KEY, next === null ? "all" : String(next));
     syncUrl({ scope: next, q, app: panel });
+  };
+
+  const chooseStage = (key: string, count: number) => {
+    setStage(key);
+    write(STAGE_KEY, key);
+    setAnnounce(`Showing ${COLUMNS.find((c) => c.key === key)?.title}, ${count} ${count === 1 ? "application" : "applications"}`);
   };
 
   const changeQuery = (next: string) => {
@@ -140,6 +167,7 @@ export function PipelineBoard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scope, text, data]);
 
+  /** Moves the card at once, then tells you if the server disagreed — never a silent revert. */
   async function move(card: PipelineCard, status: ApplicationStatus | null) {
     setData((d) =>
       d && {
@@ -148,8 +176,50 @@ export function PipelineBoard() {
       },
     );
     setAnnounce(status ? `${card.title} moved to ${STATUS_LABELS[status]}` : `${card.title} removed from pipeline`);
-    await fetch(`/api/pipeline/${card.id}`, status ? { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ status }) } : { method: "DELETE" });
+    const res = await fetch(
+      `/api/pipeline/${card.id}`,
+      status ? { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ status }) } : { method: "DELETE" },
+    ).catch(() => null);
+    if (!res?.ok) {
+      const said = res ? ((await res.json().catch(() => ({}))) as { error?: string }).error : "You may be offline.";
+      setFeedback({
+        tone: "error",
+        text: `Couldn't ${status ? `move “${card.title}” to ${STATUS_LABELS[status]}` : `remove “${card.title}”`}. ${said ?? ""}`.trim(),
+        action: { label: "Retry", run: () => move(card, status) },
+      });
+    }
     changed();
+  }
+
+  /** Clearing an action is reversible: the same email can be reopened. */
+  async function markDone(emailId: number) {
+    const row = data?.actions.find((a) => a.emailId === emailId);
+    setData((d) => d && { ...d, actions: d.actions.filter((a) => a.emailId !== emailId) });
+    try {
+      await emailAction(emailId, { type: "done", done: true });
+      changed();
+      setFeedback({
+        text: row ? `Marked done: ${row.company}.` : "Marked done.",
+        action: {
+          label: "Undo",
+          run: async () => {
+            try {
+              await emailAction(emailId, { type: "done", done: false });
+              changed();
+            } catch (e) {
+              setFeedback({ tone: "error", text: e instanceof Error ? e.message : "Couldn't undo that." });
+            }
+          },
+        },
+      });
+    } catch (e) {
+      void load();
+      setFeedback({
+        tone: "error",
+        text: e instanceof Error ? e.message : "Couldn't mark that done.",
+        action: { label: "Retry", run: () => markDone(emailId) },
+      });
+    }
   }
 
   const toggleRejected = () => {
@@ -180,8 +250,13 @@ export function PipelineBoard() {
     );
   }
 
+  // On a phone: the stage you last looked at, else the first one that holds anything.
+  const countIn = (col: (typeof COLUMNS)[number]) => cards.filter((c) => col.statuses.includes(c.status)).length;
+  const current = (stage && COLUMNS.some((c) => c.key === stage) ? stage : null) ?? (COLUMNS.find((c) => countIn(c) > 0) ?? COLUMNS[2]!).key;
   const rejectedCount = cards.filter((c) => c.status === "rejected" || c.status === "withdrawn").length;
   const collapsed = !rejectedOpen && rejectedCount > 0;
+  /** Folded to a rail: an empty stage, or Rejected when you've collapsed it. */
+  const isRail = (col: (typeof COLUMNS)[number]) => !phone && (countIn(col) === 0 || (col.key === "rejected" && collapsed));
   const filtered = scope !== null || text.length > 0;
 
   return (
@@ -198,7 +273,8 @@ export function PipelineBoard() {
               <ScopeChip key={s.id} label={s.name} note={s.archived ? "Archived" : undefined} count={countFor(s.id)} active={scope === s.id} onClick={() => chooseScope(s.id)} />
             ))}
           </div>
-          <div className="relative lg:w-64">
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1 lg:w-64 lg:flex-none">
             <Search aria-hidden className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted" />
             <input
               type="search"
@@ -213,22 +289,17 @@ export function PipelineBoard() {
                 <X aria-hidden className="size-4" />
               </button>
             )}
+            </div>
+            <button type="button" className="btn min-h-11 shrink-0" onClick={() => setAdding(true)}>
+              <Plus aria-hidden className="size-4" /> Add application
+            </button>
           </div>
         </div>
       )}
 
-      <ActionStrip
-        actions={actions}
-        onOpen={openPanel}
-        onDone={async (emailId) => {
-          setData((d) => d && { ...d, actions: d.actions.filter((a) => a.emailId !== emailId) });
-          setAnnounce("Marked done");
-          await emailAction(emailId, { type: "done", done: true });
-          changed();
-        }}
-      />
+      <ActionStrip actions={actions} onOpen={openPanel} onDone={(emailId) => void markDone(emailId)} />
       <ReviewList items={review} applications={appOptions} onChanged={changed} />
-      <EmailChanges changes={changes} onOpen={openPanel} onUndone={changed} />
+      <EmailChanges changes={changes} onOpen={openPanel} onUndone={changed} onFeedback={setFeedback} />
 
       <ConfirmDialog
         open={confirmRemove !== null}
@@ -272,15 +343,21 @@ export function PipelineBoard() {
         )
       ) : (
         <>
-          <PipelineSummary cards={cards} />
+          <PipelineSummary cards={cards} phone={phone} />
+          {phone && <StagePicker cards={cards} stage={current} onChoose={chooseStage} />}
           <div
-            className={`grid gap-3 pb-2 md:grid-cols-3 ${collapsed ? "xl:grid-cols-[repeat(5,minmax(0,1fr))_3.25rem]" : "xl:grid-cols-6"}`}
+            // `relative`: the sr-only spans inside cards are absolutely positioned, and without a
+            // containing block here they escape the scroller and widen the whole page.
+            className={`relative gap-3 pb-2 ${phone ? "block" : "flex snap-x overflow-x-auto xl:grid xl:overflow-visible"}`}
+            // At xl every stage gets a track, and the ones folded to a rail get a narrow one.
+            style={wide ? { gridTemplateColumns: COLUMNS.map((c) => (isRail(c) ? "3.25rem" : "minmax(0,1fr)")).join(" ") } : undefined}
           >
-            {COLUMNS.map((col) => {
+            {(phone ? COLUMNS.filter((c) => c.key === current) : COLUMNS).map((col) => {
               const colCards = cards.filter((c) => col.statuses.includes(c.status));
               const isRejected = col.key === "rejected";
               const dropProps = { onDragOver: dragOver(col.key), onDragLeave: () => setOver(null), onDrop: drop(col) };
-              if (isRejected && collapsed) {
+              // The rail is a desktop affordance: on a phone the picker already hides the column.
+              if (isRejected && collapsed && !phone) {
                 return (
                   <button
                     key={col.key}
@@ -289,7 +366,7 @@ export function PipelineBoard() {
                     onClick={toggleRejected}
                     aria-expanded={false}
                     aria-label={`Rejected: ${colCards.length}. Show them`}
-                    className={`flex min-h-11 items-center justify-between gap-2 rounded-xl border px-3 text-xs font-semibold tracking-wide text-muted uppercase transition-colors duration-150 hover:border-border-strong hover:text-text md:col-span-3 xl:col-span-1 xl:min-h-40 xl:flex-col xl:justify-start xl:px-0 xl:py-3 ${
+                    className={`flex min-h-11 w-14 shrink-0 snap-start flex-col items-center justify-start gap-2 rounded-xl border px-0 py-3 text-xs font-semibold tracking-wide text-muted uppercase transition-colors duration-150 hover:border-border-strong hover:text-text xl:w-auto xl:min-h-40 ${
                       over === col.key ? "border-accent bg-accent-soft" : "border-border bg-surface-2/60"
                     }`}
                   >
@@ -301,13 +378,31 @@ export function PipelineBoard() {
                   </button>
                 );
               }
+              // An empty stage doesn't need a sixth of the width; it keeps a rail you can drop onto.
+              if (colCards.length === 0 && !phone) {
+                return (
+                  <div
+                    key={col.key}
+                    {...dropProps}
+                    aria-label={`${col.title}: empty`}
+                    className={`flex min-h-11 w-14 shrink-0 snap-start flex-col items-center justify-start gap-2 rounded-xl border py-3 text-xs font-semibold tracking-wide text-muted uppercase transition-colors duration-150 xl:min-h-40 xl:w-auto ${
+                      over === col.key ? "border-accent bg-accent-soft" : "border-border bg-surface-2/40"
+                    }`}
+                  >
+                    <span aria-hidden className="xl:[writing-mode:vertical-rl]">{col.title}</span>
+                    <span aria-hidden className="tabular-nums">0</span>
+                  </div>
+                );
+              }
               const groups = groupColumn(col.key, colCards, { grouped: !isRejected });
               return (
                 <div
                   key={col.key}
                   {...dropProps}
                   // min-w-0: a truncated line in a compact card must not stretch the column.
-                  className={`min-h-40 min-w-0 rounded-xl border p-2 transition-colors duration-150 ${over === col.key ? "border-accent bg-accent-soft" : "border-border bg-surface-2/60"}`}
+                  className={`min-h-40 min-w-0 rounded-xl border p-2 transition-colors duration-150 ${phone ? "" : "w-72 shrink-0 snap-start xl:w-auto"} ${
+                    over === col.key ? "border-accent bg-accent-soft" : "border-border bg-surface-2/60"
+                  }`}
                 >
                   <h2 className="mb-2 flex items-center justify-between px-1 text-xs font-semibold tracking-wide text-muted uppercase">
                     {col.title}
@@ -322,8 +417,10 @@ export function PipelineBoard() {
                   </h2>
                   {groups.map((g) => (
                     <div key={g.bucket} className="space-y-2">
+                      {/* Pinned only where the page itself scrolls: between md and xl the row scrolls
+                          sideways, and a sticky header there would sit on top of the cards. */}
                       {g.label && (
-                        <h3 className="sticky top-16 z-10 -mx-1 rounded-md bg-surface-2/95 px-1.5 py-1 text-[11px] font-medium text-muted backdrop-blur">
+                        <h3 className="sticky top-16 z-10 -mx-1 rounded-md bg-surface-2/95 px-1.5 py-1 text-[11px] font-medium text-muted backdrop-blur md:static xl:sticky xl:top-16">
                           {g.label} <span className="tabular-nums">({g.cards.length})</span>
                         </h3>
                       )}
@@ -353,7 +450,44 @@ export function PipelineBoard() {
         </>
       )}
 
+      <AddApplicationDialog
+        open={adding}
+        onClose={() => setAdding(false)}
+        onAdded={(id) => {
+          setAdding(false);
+          // Open the card first: a refresh replaces the history entry and would drop ?app=.
+          openPanel(id);
+          changed();
+          setFeedback({ text: "Added to your pipeline." });
+        }}
+      />
       <ApplicationPanel appId={panel} applications={appOptions} onClose={() => openPanel(null)} onChanged={changed} />
+      <FeedbackBar feedback={feedback} onDismiss={() => setFeedback(null)} />
+    </div>
+  );
+}
+
+/** Which stage a phone shows. Six columns stacked is ten screens of scrolling; this is one. */
+function StagePicker({ cards, stage, onChoose }: { cards: PipelineCard[]; stage: string; onChoose: (key: string, count: number) => void }) {
+  return (
+    <div role="group" aria-label="Pipeline stage" className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-1">
+      {COLUMNS.map((col) => {
+        const n = cards.filter((c) => col.statuses.includes(c.status)).length;
+        const active = col.key === stage;
+        return (
+          <button
+            key={col.key}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onChoose(col.key, n)}
+            className={`flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg border px-3 text-sm transition-colors ${
+              active ? "border-accent bg-accent-soft font-semibold text-accent" : "border-border bg-surface text-muted"
+            }`}
+          >
+            {col.title} <span className="tabular-nums">{n}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -404,7 +538,7 @@ function Card({
         </span>
       )}
       <div className="flex gap-1">
-        <button type="button" onClick={onOpen} className="flex-1 text-left leading-snug font-semibold hover:text-accent">
+        <button type="button" onClick={onOpen} className="-my-1 flex-1 py-1 text-left leading-snug font-semibold hover:text-accent">
           {c.title}
         </button>
         <GripVertical aria-hidden className="size-4 shrink-0 text-muted" />
@@ -426,7 +560,7 @@ function Card({
         <span className="flex items-center gap-2">
           {c.appliedAt ? `Applied ${timeAgo(c.appliedAt)}` : `Updated ${timeAgo(c.updatedAt)}`}
           {c.emailCount > 0 && (
-            <button type="button" onClick={onOpen} className="inline-flex items-center gap-0.5 hover:text-accent" aria-label={`${c.emailCount} ${c.emailCount === 1 ? "email" : "emails"} about ${c.title}`}>
+            <button type="button" onClick={onOpen} className="-my-1 inline-flex items-center gap-0.5 py-1 hover:text-accent" aria-label={`${c.emailCount} ${c.emailCount === 1 ? "email" : "emails"} about ${c.title}`}>
               <Mail aria-hidden className="size-3" /> {c.emailCount}
             </button>
           )}
@@ -466,9 +600,18 @@ function CompactCard({ card: c, onOpen, onDragStart, onDragEnd }: { card: Pipeli
 }
 
 /** What your email changed this week, each undoable. */
-function EmailChanges({ changes, onOpen, onUndone }: { changes: ChangeJson[]; onOpen: (appId: number) => void; onUndone: () => void }) {
+function EmailChanges({
+  changes,
+  onOpen,
+  onUndone,
+  onFeedback,
+}: {
+  changes: ChangeJson[];
+  onOpen: (appId: number) => void;
+  onUndone: () => void;
+  onFeedback: (f: Feedback) => void;
+}) {
   const [open, setOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   if (!changes.length) return null;
   const counts = new Map<string, number>();
   for (const c of changes) {
@@ -503,13 +646,15 @@ function EmailChanges({ changes, onOpen, onUndone }: { changes: ChangeJson[]; on
                 type="button"
                 className="btn-ghost min-h-8 text-xs"
                 onClick={async () => {
-                  setError(null);
                   const res = await fetch(`/api/pipeline/${c.applicationId}/undo`, {
                     method: "POST",
                     headers: { "content-type": "application/json" },
                     body: JSON.stringify({ eventId: c.eventId }),
-                  });
-                  if (!res.ok) setError(((await res.json().catch(() => ({}))) as { error?: string }).error ?? "Couldn't undo that.");
+                  }).catch(() => null);
+                  if (!res?.ok) {
+                    const said = res ? ((await res.json().catch(() => ({}))) as { error?: string }).error : "You may be offline.";
+                    onFeedback({ tone: "error", text: said ?? "Couldn't undo that." });
+                  }
                   onUndone();
                 }}
               >
@@ -519,17 +664,12 @@ function EmailChanges({ changes, onOpen, onUndone }: { changes: ChangeJson[]; on
           ))}
         </ul>
       )}
-      {error && (
-        <p role="alert" className="mt-1 text-xs font-medium text-danger">
-          {error}
-        </p>
-      )}
     </section>
   );
 }
 
 /** From search to offer at a glance: how many made it to each stage. */
-function PipelineSummary({ cards }: { cards: PipelineCard[] }) {
+function PipelineSummary({ cards, phone }: { cards: PipelineCard[]; phone: boolean }) {
   const reached = (statuses: ApplicationStatus[]) => cards.filter((c) => statuses.includes(c.status)).length;
   const stages = [
     { label: "Saved", n: reached(["saved"]) },
@@ -550,7 +690,9 @@ function PipelineSummary({ cards }: { cards: PipelineCard[] }) {
           </li>
         ))}
       </ol>
-      <p className="text-xs text-muted">Drag cards between columns, or use the menu on each card. Click a title for its emails.</p>
+      <p className="text-xs text-muted">
+        {phone ? "Use the menu on each card to move it. Tap a title for its emails." : "Drag cards between columns, or use the menu on each card. Click a title for its emails."}
+      </p>
     </div>
   );
 }

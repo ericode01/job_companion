@@ -34,7 +34,7 @@ export function JobEmails({ applicationId, version }: { applicationId: number; v
         )}
       </div>
       <RoundTracker status={app.status} appliedAt={app.appliedAt} confirmedAt={app.confirmedAt} rounds={data.rounds} />
-      <EmailTimeline emails={data.emails} rounds={data.rounds} applications={[]} onChanged={() => void load()} />
+      <EmailTimeline emails={data.emails} rounds={data.rounds} applications={[]} applicationTitle={app.title} onChanged={() => void load()} />
     </section>
   );
 }

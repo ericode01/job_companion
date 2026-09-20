@@ -106,11 +106,19 @@ export default function AnswersPage() {
             When an application asks something you haven&apos;t answered before (like salary expectations or relocation), it shows up here.
           </EmptyState>
         ) : (
-          <ul className="space-y-3">
-            {data.inbox.map((item) => (
+          <>
+          <p className="text-sm text-muted">
+            <span className="font-medium text-text">
+              {data.inbox.length} {data.inbox.length === 1 ? "question" : "questions"} to answer
+            </span>{" "}
+            · answered once, they fill themselves from then on. Skip any that don&apos;t apply.
+          </p>
+          <ul className="mt-3 space-y-3">
+            {data.inbox.map((item, i) => (
               <InboxCard
                 key={item.id}
                 item={item}
+                index={i}
                 onDone={async (msg) => {
                   setAnnounce(msg);
                   await load();
@@ -118,6 +126,7 @@ export default function AnswersPage() {
               />
             ))}
           </ul>
+          </>
         )
       ) : (
         <div className="space-y-5">
@@ -188,8 +197,11 @@ function AnswerInput({ id, options, value, onChange, invalid, describedBy }: { i
   return <input id={id} className="input" value={value} onChange={(e) => onChange(e.target.value)} aria-invalid={invalid} aria-describedby={describedBy} />;
 }
 
-function InboxCard({ item, onDone }: { item: InboxItem; onDone: (msg: string) => Promise<void> }) {
+function InboxCard({ item, index, onDone }: { item: InboxItem; index: number; onDone: (msg: string) => Promise<void> }) {
   const id = useId();
+  const [showFull, setShowFull] = useState(false);
+  // A form's own wording can run to forty words; two lines is enough to recognise it.
+  const long = item.question.length > 140;
   const [answer, setAnswer] = useState("");
   const [scope, setScope] = useState<"global" | "job">(item.category === "salary" ? "job" : "global");
   const [error, setError] = useState<string | null>(null);
@@ -208,17 +220,24 @@ function InboxCard({ item, onDone }: { item: InboxItem; onDone: (msg: string) =>
       return;
     }
     await onDone("Answer saved");
+    // Straight to the next one: this is a batch chore, and reaching for the mouse each time is slow.
+    requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-inbox-card="${index}"] textarea, [data-inbox-card="${index}"] input, [data-inbox-card="${index}"] select`)?.focus());
   }
 
   return (
-    <li className="card space-y-3 p-4">
+    <li data-inbox-card={index} className="card space-y-3 p-4">
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
-          <label htmlFor={id} className="font-semibold">
+          <label htmlFor={id} className={`block font-semibold ${long && !showFull ? "line-clamp-2" : ""}`}>
             {item.question}
           </label>
+          {long && (
+            <button type="button" className="text-xs font-medium text-accent hover:underline" aria-expanded={showFull} onClick={() => setShowFull((v) => !v)}>
+              {showFull ? "Show less" : "Show more"}
+            </button>
+          )}
           <p className="text-xs text-muted">
-            {CATEGORY_LABELS[item.category]} · asked {item.seenCount} {item.seenCount === 1 ? "time" : "times"} · last {timeAgo(item.updatedAt)}
+            {CATEGORY_LABELS[item.category]} · asked {item.seenCount} {item.seenCount === 1 ? "time" : "times"} · last asked {timeAgo(item.updatedAt)}
           </p>
         </div>
         <button

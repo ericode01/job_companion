@@ -1,9 +1,9 @@
 "use client";
 
 import { EMAIL_KINDS, INTERVIEW_ROUNDS, type InterviewRound } from "@jd/core/shared";
-import { AlertTriangle, CalendarCheck, Check, ExternalLink, Reply, Undo2 } from "lucide-react";
+import { AlertTriangle, CalendarCheck, Check, ExternalLink, Reply, Tag, Undo2 } from "lucide-react";
 import { useId, useState } from "react";
-import { dueLabel, KIND_META, openLink, replyLink, ROUND_META, roundName, shortDate } from "@/lib/mail-labels";
+import { dueLabel, KIND_META, openLink, replyLink, ROUND_META, roundName, sameRole, shortDate } from "@/lib/mail-labels";
 import { emailAction, type EmailJson, type RoundJson } from "@/lib/pipeline-types";
 
 interface Group {
@@ -35,12 +35,15 @@ export function EmailTimeline({
   emails,
   rounds,
   applications,
+  applicationTitle,
   onChanged,
 }: {
   emails: EmailJson[];
   rounds: RoundJson[];
   /** Other applications this email could be about, for "This is wrong". */
   applications: { id: number; label: string }[];
+  /** This card's role, so an email about a different one can say so. */
+  applicationTitle?: string | null;
   onChanged: () => void;
 }) {
   if (!emails.length) {
@@ -53,7 +56,7 @@ export function EmailTimeline({
           <h3 className="mb-2 text-xs font-semibold tracking-wide text-muted uppercase">{g.title}</h3>
           <ol className="space-y-2 border-l-2 border-border pl-3">
             {g.emails.map((e) => (
-              <EmailItem key={e.id} email={e} applications={applications} onChanged={onChanged} />
+              <EmailItem key={e.id} email={e} applications={applications} applicationTitle={applicationTitle} onChanged={onChanged} />
             ))}
           </ol>
         </section>
@@ -62,7 +65,17 @@ export function EmailTimeline({
   );
 }
 
-function EmailItem({ email: e, applications, onChanged }: { email: EmailJson; applications: { id: number; label: string }[]; onChanged: () => void }) {
+function EmailItem({
+  email: e,
+  applications,
+  applicationTitle,
+  onChanged,
+}: {
+  email: EmailJson;
+  applications: { id: number; label: string }[];
+  applicationTitle?: string | null;
+  onChanged: () => void;
+}) {
   const id = useId();
   const [error, setError] = useState<string | null>(null);
   const meta = KIND_META[e.kind];
@@ -98,6 +111,15 @@ function EmailItem({ email: e, applications, onChanged }: { email: EmailJson; ap
       <div>
         <p className="text-sm font-medium [overflow-wrap:anywhere]">{e.subject || "(no subject)"}</p>
         <p className="text-xs text-muted [overflow-wrap:anywhere]">From {e.fromName ? `${e.fromName} <${e.fromAddress}>` : e.fromAddress}</p>
+        {/* A different role at the same company usually means a different application. */}
+        {e.jobTitle && !sameRole(e.jobTitle, applicationTitle) && (
+          <p className="mt-1 flex items-start gap-1.5 text-xs text-muted">
+            <Tag aria-hidden className="mt-0.5 size-3 shrink-0" />
+            <span>
+              This email is about <span className="font-medium text-text">{e.jobTitle}</span>. If that&apos;s a different application, say so below.
+            </span>
+          </p>
+        )}
       </div>
       {e.summary && <p className="text-sm">{e.summary}</p>}
       {e.eventAt && (

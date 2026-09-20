@@ -2,6 +2,7 @@ import { getSettings } from "@jd/core";
 import {
   connectionStats,
   domainOf,
+  emailChangesSince,
   fakeMailAllowed,
   googleConfigured,
   listConnections,
@@ -27,6 +28,8 @@ export function GET(req: Request) {
       testMailbox: fakeMailAllowed(),
       connections: listConnections(user.id).map((c) => ({ ...toPublic(c), stats: connectionStats(user.id, c.id) })),
       review: reviewQueue(user.id),
+      // "Is it still working?" is answered better by what it just did than by a status pill.
+      changes: emailChangesSince(user.id, new Date(Date.now() - 7 * 86_400_000)).slice(0, 5),
       applications: trackedApplications(user.id).map((a) => ({ id: a.id, label: `${a.company} · ${a.title}` })),
     });
   });

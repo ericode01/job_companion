@@ -268,7 +268,7 @@ export function ApplicationPanel({
                 <h3 id={`${ids.title}-emails`} className="section-title mb-3">
                   Emails <span className="font-normal text-muted tabular-nums">({data.emails.length})</span>
                 </h3>
-                <EmailTimeline emails={data.emails} rounds={data.rounds} applications={others} onChanged={() => void refresh()} />
+                <EmailTimeline emails={data.emails} rounds={data.rounds} applications={others} applicationTitle={app.title} onChanged={() => void refresh()} />
               </section>
 
               {data.events.length > 0 && (

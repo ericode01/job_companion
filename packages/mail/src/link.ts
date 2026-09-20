@@ -89,6 +89,9 @@ export function titleSimilarity(a: string, b: string): number {
   return both / (x.size + y.size - both);
 }
 
+/** Title overlap that's convincing enough to attach an email to a card by itself. */
+const SURE_TITLE = 0.55;
+
 const domainOf = (address: string | null) => address?.split("@")[1]?.toLowerCase() ?? "";
 const underDomain = (domain: string, d: string) => domain === d || domain.endsWith(`.${d}`);
 
@@ -135,7 +138,7 @@ export function linkEmail(userId: number, input: LinkInput, apps: TrackedApp[]):
   // 3. The classifier's pick, if the company agrees.
   const ref = input.applicationRef !== null ? byId.get(input.applicationRef) : undefined;
   if (ref && (!input.companyName || sameCompany(ref.company, input.companyName))) {
-    if (!input.jobTitle || titleSimilarity(ref.title, input.jobTitle) >= 0.3) return { kind: "linked", applicationId: ref.id, via: "ref" };
+    if (!input.jobTitle || titleSimilarity(ref.title, input.jobTitle) >= SURE_TITLE) return { kind: "linked", applicationId: ref.id, via: "ref" };
   }
 
   // 4. Same company (by name or the sender's domain), then the closest title.
@@ -154,7 +157,9 @@ export function linkEmail(userId: number, input: LinkInput, apps: TrackedApp[]):
   const [best, second] = scored;
   // A clearly different role at the same company is a different application.
   if (best!.s < 0.3) return { kind: "none", jobId: urlJobId ?? findJobForExternal(input.companyName, input.jobTitle, input.fromAddress) };
-  if (!second || best!.s - second.s >= 0.15) return { kind: "linked", applicationId: best!.a.id, via: "company" };
+  // People apply to several roles at one company, and those emails look alike. Only a close title
+  // match links on its own; a partial one waits in "Check these" rather than joining the wrong card.
+  if (best!.s >= SURE_TITLE && (!second || best!.s - second.s >= 0.15)) return { kind: "linked", applicationId: best!.a.id, via: "company" };
   return { kind: "ambiguous", candidates: scored.filter((x) => x.s >= best!.s - 0.15).map((x) => x.a.id) };
 }
 

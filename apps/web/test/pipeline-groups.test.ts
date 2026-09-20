@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PipelineCard } from "../lib/pipeline-types";
+import { formatFactValue } from "../lib/format";
 import { bucketOf, GROUP_AT, groupColumn, groupLabel } from "../lib/pipeline-groups";
 
 const NOW = Date.parse("2026-09-19T12:00:00Z");
@@ -79,5 +80,17 @@ describe("pipeline grouping", () => {
 
   it("has nothing to show for an empty column", () => {
     expect(groupColumn("offer", [], { now: NOW })).toEqual([]);
+  });
+});
+
+describe("fact formatting", () => {
+  it("makes money readable and leaves everything else alone", () => {
+    expect(formatFactValue("Total funding", "1770000000")).toBe("$1.77B");
+    expect(formatFactValue("Last round", "550000000 at 15.5 billion valuation in September 2026")).toBe("$550M at 15.5 billion valuation in September 2026");
+    expect(formatFactValue("Total funding", "$1,770,000,000")).toBe("$1.77B");
+    // Not a money fact: a headcount stays a headcount, and so do years.
+    expect(formatFactValue("Headcount", "1705")).toBe("1705");
+    expect(formatFactValue("Headcount", "110000")).toBe("110000");
+    expect(formatFactValue("Total funding", "Undisclosed, founded 2022")).toBe("Undisclosed, founded 2022");
   });
 });

@@ -2,16 +2,12 @@ import { and, eq, gte, sql } from "drizzle-orm";
 import { currentUserId } from "./actor";
 import { getDb } from "./db";
 import { llmUsage, user } from "./db/schema";
+import { dearestPrice, priceFor } from "./prices";
 import { getSettings } from "./settings";
 
-/** USD per million tokens. Estimates for the spend view; update when pricing changes. */
-const PRICING: Record<string, { input: number; output: number }> = {
-  "claude-haiku-4-5": { input: 1, output: 5 },
-  "claude-sonnet-5": { input: 2, output: 10 },
-  "claude-opus-5": { input: 5, output: 25 },
-};
-/** USD per web search request (server tool). Web fetch has no per-request charge. */
+/** USD per web search request (Anthropic's server tool). Web fetch has no per-request charge. */
 const WEB_SEARCH_USD = 0.01;
+/** Anthropic's cache rates as multiples of the input rate, for models the price table doesn't detail. */
 const CACHE_READ_MULT = 0.1;
 const CACHE_WRITE_MULT = 1.25;
 
@@ -23,20 +19,32 @@ export interface UsageInput {
   cacheReadTokens?: number;
   cacheWriteTokens?: number;
   webSearchRequests?: number;
+  /** What the provider says it charged. Beats any estimate; OpenRouter returns it per request. */
+  costUsd?: number;
 }
 
+/**
+ * What a call probably cost, from the price snapshot. Only used when the provider didn't say:
+ * OpenRouter reports an exact figure, Anthropic doesn't. An unknown model is costed at the
+ * dearest price on file, so a mistake shows up as an early cap rather than as free work.
+ */
 export function estimateCostUsd(u: UsageInput): number {
-  const p = PRICING[u.model] ?? PRICING["claude-opus-5"]!;
+  const p = priceFor(u.model) ?? dearestPrice();
   const read = u.cacheReadTokens ?? 0;
   const write = u.cacheWriteTokens ?? 0;
   return (
     (u.inputTokens * p.input +
-      read * p.input * CACHE_READ_MULT +
-      write * p.input * CACHE_WRITE_MULT +
+      read * (p.cacheRead ?? p.input * CACHE_READ_MULT) +
+      write * (p.cacheWrite ?? p.input * CACHE_WRITE_MULT) +
       u.outputTokens * p.output) /
       1_000_000 +
     (u.webSearchRequests ?? 0) * WEB_SEARCH_USD
   );
+}
+
+/** True when nothing on file prices this model, so its cost is a worst-case guess. */
+export function isEstimatedModel(model: string): boolean {
+  return priceFor(model) === null;
 }
 
 export function recordUsage(u: UsageInput): void {
@@ -50,7 +58,7 @@ export function recordUsage(u: UsageInput): void {
       outputTokens: u.outputTokens,
       cacheReadTokens: u.cacheReadTokens ?? 0,
       cacheWriteTokens: u.cacheWriteTokens ?? 0,
-      costUsd: estimateCostUsd(u),
+      costUsd: u.costUsd ?? estimateCostUsd(u),
     })
     .run();
 }

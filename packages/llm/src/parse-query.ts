@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { getSettings, SearchFilterSchema, type SearchFilter } from "@jd/core";
 import { parseQueryWithRules } from "@jd/sources";
-import { assertBudget, getClient, hasApiKey, recordMessageUsage } from "./client";
+import { assertBudget, forModel, hasKeyFor, parseStructured, recordMessageUsage } from "./client";
 
 const SYSTEM = `You turn a job-search query into a structured title/location filter for matching job postings from company job boards (Greenhouse, Lever, Ashby).
 
@@ -61,12 +61,13 @@ export async function parseSearchQuery(
     warning,
   });
 
-  if (!hasApiKey()) return fallback("No API key set, so the query was parsed with built-in rules.");
+  const setting = getSettings("ai").models.queryParse;
+  if (!hasKeyFor(setting)) return fallback("No API key set, so the query was parsed with built-in rules.");
 
-  const model = getSettings("ai").models.queryParse;
   try {
     assertBudget({ background: false });
-    const response = await getClient().messages.parse({
+    const { client, model } = forModel(setting);
+    const response = await client.messages.create({
       model,
       max_tokens: 2048,
       system: SYSTEM,
@@ -78,11 +79,14 @@ export async function parseSearchQuery(
       ],
       output_config: { format: zodOutputFormat(SearchFilterSchema) },
     });
-    recordMessageUsage("query_parse", model, response.usage);
-    if (response.stop_reason === "refusal" || !response.parsed_output) {
+    recordMessageUsage("query_parse", setting, response);
+    if (response.stop_reason === "refusal") return fallback("The AI parser declined, so built-in rules were used.");
+    let f: SearchFilter;
+    try {
+      f = parseStructured(response, SearchFilterSchema, "search filter");
+    } catch {
       return fallback("The AI parser returned no usable filter, so built-in rules were used.");
     }
-    const f = response.parsed_output;
     const lower = (xs: string[]) => [...new Set(xs.map((x) => x.toLowerCase().trim()).filter(Boolean))];
     return {
       filter: {
@@ -99,9 +103,9 @@ export async function parseSearchQuery(
       err instanceof Anthropic.AuthenticationError
         ? "The API key was rejected"
         : err instanceof Anthropic.RateLimitError
-          ? "Rate limited by the Claude API"
+          ? "Rate limited by the AI provider"
           : err instanceof Anthropic.APIError
-            ? `Claude API error ${err.status}`
+            ? `AI provider error ${err.status}`
             : err instanceof Error
               ? err.message
               : String(err);

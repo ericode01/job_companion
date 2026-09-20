@@ -1,5 +1,5 @@
 import { getDb, schema } from "@jd/core/db";
-import { hasApiKey } from "@jd/llm";
+import { AI_KEY_HINT, hasApiKey } from "@jd/llm";
 import { briefFor, enqueueDiscovery, latestDiscoveryRuns } from "@jd/research";
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
@@ -17,7 +17,7 @@ const Body = z
 /** Adds shared companies, so it's an admin action. */
 export function POST(req: Request) {
   return withAdmin(req, async (user) => {
-    if (!hasApiKey()) return NextResponse.json({ error: "Set ANTHROPIC_API_KEY on the server to search for companies." }, { status: 422 });
+    if (!hasApiKey()) return NextResponse.json({ error: `Set ${AI_KEY_HINT} on the server to search for companies.` }, { status: 422 });
     const { prompt, searchId } = Body.parse(await readJson(req));
     let brief = prompt ?? "";
     if (searchId) {

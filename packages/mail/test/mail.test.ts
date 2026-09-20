@@ -12,17 +12,19 @@ process.env.MAIL_FAKE_DIR = fakeDir;
 
 const parseQueue: EmailClassification[] = [];
 const calls: Anthropic.MessageCreateParams[] = [];
+const fakeClient = {
+  messages: {
+    create: async (p: Anthropic.MessageCreateParams) => {
+      calls.push(p);
+      return { stop_reason: "end_turn", content: [{ type: "text", text: JSON.stringify(parseQueue.shift()), citations: null }], usage: { input_tokens: 10, output_tokens: 10 } };
+    },
+  },
+};
 vi.mock("@jd/llm", async (orig) => ({
   ...(await orig<typeof import("@jd/llm")>()),
   hasApiKey: () => true,
-  getClient: () => ({
-    messages: {
-      parse: async (p: Anthropic.MessageCreateParams) => {
-        calls.push(p);
-        return { stop_reason: "end_turn", content: [], usage: { input_tokens: 10, output_tokens: 10 }, parsed_output: parseQueue.shift() };
-      },
-    },
-  }),
+  hasKeyFor: () => true,
+  forModel: (setting: string) => ({ client: fakeClient, model: setting.split(":").pop()!, route: setting.split(":")[0] }),
 }));
 
 const mail = await import("../src");

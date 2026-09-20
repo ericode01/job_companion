@@ -306,8 +306,10 @@ When a cap is reached, background work (crawl scoring, enrichment, digests) paus
 
 ## 10. Privacy and security
 - The resume, profile, and answers live in `data/`, which is gitignored and local.
-- The only outbound PII is to the Claude API, for tailoring and scoring. This is documented in settings.
-- `ANTHROPIC_API_KEY` is stored in `.env.local`.
+- Outbound PII goes to whichever model provider each task is set to (§23): Anthropic direct, or a
+  provider reached through OpenRouter. Every routed request pins `provider.data_collection: "deny"`,
+  so OpenRouter refuses to send it to an endpoint that logs or trains on it. This is documented in settings.
+- `ANTHROPIC_API_KEY` and `OPENROUTER_API_KEY` are stored in `.env.local`.
 - The server binds to `127.0.0.1` only. The extension authenticates with a pairing token.
 
 ## 11. Delivery plan
@@ -717,3 +719,147 @@ thirteen issues, fixed in three batches.
 Two layout bugs surfaced while testing the sideways row: absolutely positioned `sr-only` spans
 escaped the scroller and widened the page (the row is now a containing block), and sticky group
 headers sat on the cards inside it (they pin only where the page itself scrolls).
+
+## 23. Choosing a model per job, and paying less for it (v10)
+
+Four days of real use cost **$17.60 over 1,031 calls**, and most of it was frontier-model work on
+tasks that don't need one. From `llm_usage`:
+
+| purpose | model | calls | cost | after |
+|---|---|---:|---:|---:|
+| company_research (+ structuring) | claude-sonnet-5 | 70 | $11.13 | **$2.79** |
+| fit_score | claude-haiku-4-5 | 760 | $4.99 | $4.99 |
+| email_classify | claude-haiku-4-5 | 114 | $0.48 | **$0.03** |
+| job summaries, form answers, searches | claude-haiku-4-5 | 73 | $0.26 | **$0.03** |
+| cover letters, tailoring, resume PDFs | claude-sonnet-5 | 14 | $0.74 | $0.74 |
+| **total** | | **1,031** | **$17.60** | **$8.58** |
+
+About **−51%**, from a measured per-company research cost and a measured per-email sorting cost, not
+from a price list. It is less than the −70% this started out aiming for, and the gap is entirely fit
+scoring: the section below explains why that one didn't move.
+
+### The route is part of the model setting
+
+Each `ai.models.*` value is `<route>:<model id exactly as that route spells it>` —
+`anthropic:claude-sonnet-5`, `openrouter:deepseek/deepseek-v4-flash`, `openrouter:openrouter/auto`.
+`parseModel` splits on the first colon; `forModel` hands back the client and the id to send.
+
+The route needs its own separator because OpenRouter's slug for Claude *is*
+`anthropic/claude-sonnet-5`: slashes alone can't distinguish Anthropic direct from Claude routed
+through OpenRouter, and both are wanted (the second for its failover). Keeping the model id verbatim
+also means nothing is reassembled, so OpenRouter's own router stays spelled `openrouter/auto` even
+though `openrouter:openrouter/auto` repeats the word.
+
+A value with no colon means Anthropic direct. That kept every stored settings row working across the
+change; `reconcileAiSettings()` then rewrites them to the qualified form once, beside
+`reconcileAtsSettings`.
+
+### One SDK, two endpoints
+
+OpenRouter exposes an Anthropic-compatible `POST /api/v1/messages` that accepts everything this app
+sends — `system`, `tools`, `stream`, top-level `cache_control`, `output_config.format` and
+`.effort`. So the OpenRouter client is the same `@anthropic-ai/sdk` with `baseURL`
+`https://openrouter.ai/api` and `authToken`; `messages.parse()`, `zodOutputFormat()`,
+`.stream().finalMessage()` and PDF blocks work unchanged.
+
+A `fetch` wrapper (`routingPrefs`) adds the fields the SDK's types don't know about, so no call site
+has to care: `provider.data_collection: "deny"` (below), `require_parameters` so the router can't
+pick an endpoint that would ignore the JSON schema, `provider.max_price`, the `auto-router` plugin
+when the model is the Auto Router, and `temperature: 0` whenever a schema is being filled — open
+models default near 1.0, which invents fields.
+
+### What Automatic is for
+
+`openrouter:openrouter/auto` classifies the prompt and picks whatever the community spends most on
+for that task type, within a `cost_tier` band. No fee, and it brings its own fallbacks. It is
+supported everywhere and is **not the default anywhere**, which was a change of mind during the
+work: the plan had it defaulted for query parsing and extraction, and `pnpm probe` disagreed.
+
+Repeating one structured-output call, Auto answered in 3.2s, 14s and 31.8s, against a steady
+1.3–1.8s from the pinned model — it lands on a different provider each time. Two separate reasons
+rule that out here:
+
+- **Latency.** Query parsing runs while someone waits on the search box, and form answers while they
+  wait in the apply dialog. A 30-second search box is not a saving.
+- **Comparability.** Fit scores are ranked against each other and `job_fit.model` records which
+  model produced each one, so a 72 from one model and a 68 from another mean nothing together.
+  Email classification decides which pipeline card moves.
+
+That leaves no purpose in this app that wants a model chosen per request. Auto is still wired up,
+tested and selectable — worth having when a genuinely background, one-off task appears.
+
+### Cost is measured, not modelled
+
+`usage.cost` comes back on every OpenRouter response, so routed spend is the real charge, server-tool
+fees included. Anthropic doesn't report cost, so `estimateCostUsd` still prices those from
+`packages/core/src/model-prices.json` — a committed snapshot of OpenRouter's public catalogue
+(`pnpm prices:refresh`; the worker keeps a fresher copy in `data/`). Usage is recorded against the
+model that **answered**, not the one requested, because with Automatic those differ and a ledger
+that says "openrouter/auto" answers nothing.
+
+The old estimator fell back to *Opus* pricing for any unrecognised model, which would have costed a
+$0.06 model at $5 and tripped the daily cap in minutes. It now falls back to the dearest price on
+file, deliberately: a cap is a safety device, so an unknown model should stop work early rather than
+look free.
+
+### What each purpose actually runs on, and why
+
+Every default below was chosen by running the thing, not by reading a price list. `pnpm probe`
+checks whether a model can do the mechanics; `pnpm compare-models` re-runs real work and reports the
+drift. Two of the plan's assumptions did not survive that.
+
+| purpose | model | measured |
+|---|---|---|
+| fit scores | `anthropic:claude-haiku-4-5` | **no cheap model could take it** |
+| email sorting | `openrouter:google/gemini-2.5-flash-lite` | 14/15 same verdict as Haiku, 94% cheaper |
+| searches, summaries, form answers | `openrouter:google/gemini-2.5-flash-lite` | 27/27 valid structured output across both runs |
+| company research | `anthropic:claude-haiku-4-5` | $0.085 a company, down from $0.337 |
+| cover letters, tailoring, resume PDFs | `anthropic:claude-sonnet-5` | unchanged; writing quality, and PDFs need a multimodal model |
+
+**Fit scoring was supposed to be the big saving and isn't.** On twelve real postings, DeepSeek V4
+Flash drifted 16.4 points from the stored Haiku scores and changed the verdict band on 9 of 11, in
+both directions (−32 to +13), with one call failing outright. Gemini Flash Lite drifted 17.7 points
+and changed the band on 11 of 12 — every single one upward, clustered on three distinct values, so
+the lowest-scored job in the sample tied with the middle of the pack. Qwen3 30B managed three calls
+in four minutes before stalling. Scoring is calibrated judgement, and the rubric is calibrated to
+Claude; extraction is not the same task. Fit scores stay on Haiku, and its $4.99 stays on the bill.
+
+**Email sorting nearly fooled us.** DeepSeek appeared to agree with Haiku 14 times out of 15 — until
+the comparison separated who answered. It had failed to fill the schema 13 of those times, and the
+rules-based fallback had quietly got the easy "Thanks for applying" mail right. Its one real answer
+read an interview reminder as unrelated. `compare-models --purpose emails` now reports model answers
+and rules fallbacks separately, and `classifyEmail` logs when it falls back, because a model that can
+never fill the schema otherwise looks like a model that works.
+
+### Company research stays on Anthropic
+
+Not for compatibility — `web_search_20250305` is in OpenRouter's schema and the `pause_turn` loop
+exits cleanly for a provider that finishes in one turn. It is because `collectConsultedUrls` learns
+which URLs were really retrieved from the search-result blocks and citations, and `restrictSources`
+drops every source outside that set. A provider that reports searches differently wouldn't fail; it
+would produce a profile where an invented URL is indistinguishable from a retrieved one.
+`assertNativeSearch` therefore refuses any other route, and `pnpm probe <model> --search` is the
+measurement that would justify lifting it.
+
+Research got cheaper anyway, with settings alone: `maxWebSearches` 5 → 3 (each search's results join
+a context every later turn re-reads, so it drives tokens as much as the $0.01 fee),
+`refreshAfterDays` 30 → 90, and the research model Sonnet 5 → Haiku 4.5, which supports the same
+native search at half the token price. Measured on one re-research: **$0.085 against $0.337**, a 75%
+cut with the source checks untouched.
+
+Moving research to Haiku also found a trap. `output_config: { effort: "medium" }` is a thinking
+budget Sonnet accepts and Haiku rejects with a 400 — so the switch didn't make research worse, it
+stopped it dead. `effortFor()` now sends the parameter only where it is taken, and the test asserts
+both halves.
+
+### Privacy
+
+Resumes, inbox contents and profile facts now reach a third party, so every routed request pins
+`provider.data_collection: "deny"` — OpenRouter errors rather than routing to an endpoint that logs
+or trains. Every model offered in the admin list has zero-data-retention endpoints. §10 is updated.
+
+### Tests can no longer spend money
+
+While this change was in flight, a test mock stopped covering the code under test and the suite made
+real, billed API calls. `test/no-network.ts` now replaces `fetch` in every test run, so a stale mock
+is a loud failure instead of an invoice.

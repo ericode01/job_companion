@@ -1,7 +1,7 @@
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { getSettings, JobAnalysisSchema } from "@jd/core";
 import { getDb, schema } from "@jd/core/db";
-import { assertBudget, getClient, recordMessageUsage } from "@jd/llm";
+import { assertBudget, forModel, parseStructured, recordMessageUsage } from "@jd/llm";
 import { eq } from "drizzle-orm";
 import { assertUsableStop, NonRetryableError } from "./util";
 
@@ -27,9 +27,10 @@ export async function analyzeJob(jobId: number, opts: { background: boolean }): 
     .get();
   if (!row) throw new NonRetryableError(`Job ${jobId} not found`);
   assertBudget(opts);
-  const model = getSettings("ai").models.extraction;
+  const setting = getSettings("ai").models.extraction;
+  const { client, model } = forModel(setting);
   const j = row.job;
-  const response = await getClient().messages.parse({
+  const response = await client.messages.create({
     model,
     max_tokens: 4000,
     system: ANALYZE_SYSTEM,
@@ -41,10 +42,10 @@ export async function analyzeJob(jobId: number, opts: { background: boolean }): 
     ],
     output_config: { format: zodOutputFormat(JobAnalysisSchema) },
   });
-  recordMessageUsage("job_analysis", model, response.usage);
+  recordMessageUsage("job_analysis", setting, response);
   assertUsableStop(response, "analyze this job posting");
-  if (!response.parsed_output) throw new NonRetryableError("Claude returned no job analysis.");
-  const values = { jobId, data: response.parsed_output, contentHash: j.contentHash, model, analyzedAt: new Date() };
+  const analysis = parseStructured(response, JobAnalysisSchema, "job analysis");
+  const values = { jobId, data: analysis, contentHash: j.contentHash, model, analyzedAt: new Date() };
   return db.insert(jobAnalysis).values(values).onConflictDoUpdate({ target: jobAnalysis.jobId, set: values }).returning().get();
 }
 

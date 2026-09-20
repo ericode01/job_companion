@@ -111,7 +111,7 @@ export function DiscoverCompanies({ onAdded }: { onAdded: () => void }) {
         </p>
       </div>
 
-      {!hasApiKey && <Alert>Set ANTHROPIC_API_KEY in .env.local to use this.</Alert>}
+      {!hasApiKey && <Alert>Set an AI API key in .env.local to use this.</Alert>}
 
       <form onSubmit={start} className="space-y-2">
         <div className="grid gap-2 sm:grid-cols-2">

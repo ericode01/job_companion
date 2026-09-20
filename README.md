@@ -11,7 +11,7 @@ Requires Node 22+ and pnpm 10+.
 
 ```bash
 pnpm install
-cp .env.example .env.local   # add ANTHROPIC_API_KEY
+cp .env.example .env.local   # add ANTHROPIC_API_KEY and/or OPENROUTER_API_KEY
 pnpm setup                   # create the DB, import ~275 companies, pull their open jobs (~1 min)
 pnpm dev                     # http://127.0.0.1:4317
 ```
@@ -56,7 +56,7 @@ The app is one Node process for the web app plus one for the worker, with SQLite
    docker run -d --name job-companion -p 127.0.0.1:4317:4317 -v jc-data:/data --env-file .env.production job-companion
    ```
 
-   `.env.production` holds `APP_ORIGIN`, `SECRET_KEY`, `ANTHROPIC_API_KEY`, mail credentials, and optionally `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`. The database and uploaded resumes live in the `jc-data` volume; back it up.
+   `.env.production` holds `APP_ORIGIN`, `SECRET_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, mail credentials, and optionally `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`. The database and uploaded resumes live in the `jc-data` volume; back it up.
 
 3. Put an HTTPS reverse proxy in front. With Caddy, the whole config is:
 

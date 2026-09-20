@@ -71,7 +71,7 @@ export function CompanyProfileCard({ profile, task, hasApiKey, onResearch, compa
             </button>
           </div>
         ) : (
-          <p className="text-muted">Add ANTHROPIC_API_KEY to .env.local to research companies.</p>
+          <p className="text-muted">Add an AI API key to .env.local to research companies.</p>
         )}
       </div>
     );

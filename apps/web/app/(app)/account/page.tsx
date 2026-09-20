@@ -1,4 +1,4 @@
-import { hasApiKey } from "@jd/llm";
+import { AI_KEY_HINT, hasApiKey } from "@jd/llm";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { AccountBasics, PasswordForm } from "@/components/AccountForms";
@@ -50,7 +50,7 @@ export default async function AccountPage() {
 
       {!hasApiKey() && (
         <Alert>
-          AI features are off on this server: no fit scores, cover letters or tailored resumes. {user.role === "admin" ? "Set ANTHROPIC_API_KEY in the server environment." : "Ask your admin to set it up."}
+          AI features are off on this server: no fit scores, cover letters or tailored resumes. {user.role === "admin" ? `Set ${AI_KEY_HINT} in the server environment.` : "Ask your admin to set it up."}
         </Alert>
       )}
 

@@ -10,17 +10,19 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "jd-apply-"));
 const parseQueue: unknown[] = [];
 const calls: Anthropic.MessageCreateParams[] = [];
 const usage = { input_tokens: 10, output_tokens: 10 } as Anthropic.Usage;
+const fakeClient = {
+  messages: {
+    create: async (p: Anthropic.MessageCreateParams) => {
+      calls.push(p);
+      return { stop_reason: "end_turn", content: [{ type: "text", text: JSON.stringify(parseQueue.shift()), citations: null }], usage };
+    },
+  },
+};
 vi.mock("@jd/llm", async (orig) => ({
   ...(await orig<typeof import("@jd/llm")>()),
   hasApiKey: () => true,
-  getClient: () => ({
-    messages: {
-      parse: async (p: Anthropic.MessageCreateParams) => {
-        calls.push(p);
-        return { stop_reason: "end_turn", content: [], usage, parsed_output: parseQueue.shift() };
-      },
-    },
-  }),
+  hasKeyFor: () => true,
+  forModel: (setting: string) => ({ client: fakeClient, model: setting.split(":").pop()!, route: setting.split(":")[0] }),
 }));
 
 const apply = await import("../src");

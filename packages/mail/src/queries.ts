@@ -259,3 +259,38 @@ export function connectionStats(userId: number, connectionId: number) {
       .get()?.n ?? 0;
   return { byKind: Object.fromEntries(byKind.map((r) => [r.kind, r.n])) as Partial<Record<EmailKind, number>>, createdApplications: created };
 }
+
+/** What a stored email looked like going in, for re-classifying it on another model. */
+export interface ClassifiedEmail {
+  subject: string;
+  fromName: string | null;
+  fromAddress: string | null;
+  receivedAt: Date;
+  snippet: string;
+  kind: string;
+  companyName: string | null;
+}
+
+/**
+ * Recently sorted emails with the label they were given. The body isn't kept, so a re-run sees
+ * subject and snippet only — fine for comparing two models against each other on equal footing,
+ * not for judging either against the original decision.
+ */
+export function recentlyClassified(userId: number, limit: number): ClassifiedEmail[] {
+  return getDb()
+    .select({
+      subject: em.subject,
+      fromName: em.fromName,
+      fromAddress: em.fromAddress,
+      receivedAt: em.receivedAt,
+      snippet: em.snippet,
+      kind: em.kind,
+      companyName: em.companyName,
+    })
+    .from(em)
+    .where(and(eq(em.userId, userId), eq(em.classifiedBy, "llm")))
+    .orderBy(desc(em.receivedAt))
+    .limit(limit)
+    .all()
+    .map((r) => ({ ...r, subject: r.subject ?? "", snippet: r.snippet ?? "" }));
+}

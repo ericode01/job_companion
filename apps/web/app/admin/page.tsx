@@ -1,6 +1,6 @@
 import { appOrigin, getSettings, getSpendStatus, listUsers, loadEnv, spendByUser } from "@jd/core";
 import { getDb, schema } from "@jd/core/db";
-import { hasApiKey } from "@jd/llm";
+import { AI_KEY_HINT, hasApiKey } from "@jd/llm";
 import { googleConfigured } from "@jd/mail";
 import { countOpenJobs, pendingDetailCount } from "@jd/sources";
 import { and, count, eq, gte, inArray, sql } from "drizzle-orm";
@@ -80,7 +80,7 @@ export default function AdminOverview() {
           Setup checks
         </h2>
         <ul className="mt-1 divide-y divide-border">
-          <Check ok={hasApiKey()}>{hasApiKey() ? "Claude API key is set." : "No ANTHROPIC_API_KEY: fit scores, research, cover letters and tailoring are off."}</Check>
+          <Check ok={hasApiKey()}>{hasApiKey() ? "An AI API key is set." : `No ${AI_KEY_HINT}: fit scores, research, cover letters and tailoring are off.`}</Check>
           <Check ok={origin.startsWith("https://") || process.env.NODE_ENV !== "production"}>
             Public address is <code className="rounded bg-surface-2 px-1">{origin}</code>
             {origin.startsWith("https://") ? "." : " (set APP_ORIGIN to your https address before sharing invites)."}

@@ -3,6 +3,7 @@ export * from "./types";
 export * from "./research-types";
 export * from "./mail-types";
 export * from "./settings";
+export * from "./prices";
 export * from "./usage";
 export * from "./queue";
 export * from "./actor";

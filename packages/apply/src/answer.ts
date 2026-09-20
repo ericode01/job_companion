@@ -2,7 +2,7 @@ import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { getProfile, getSettings, type FormQuestion, type QuestionAnswer } from "@jd/core";
 import { getDb, schema } from "@jd/core/db";
 import type { AnswerCategory } from "@jd/core/schema";
-import { assertBudget, getClient, hasApiKey, recordMessageUsage } from "@jd/llm";
+import { assertBudget, forModel, hasApiKey, parseStructured, recordMessageUsage } from "@jd/llm";
 import { getResume, resumeForPrompt } from "@jd/research";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
@@ -218,8 +218,9 @@ async function askClaude(userId: number, resumeId: number | null, jobId: number,
   const bank = answersForJob(userId, jobId).map((b) => ({ id: b.id, question: b.question, answer: b.answer, category: b.category }));
   const profileFacts = JSON.stringify({ name: profile?.name, location: profile?.location, links: profile?.links, about: profile?.about ?? undefined });
   const resumeText = resume ? resumeForPrompt(resume) : "none";
-  const model = getSettings("ai").models.extraction;
-  const response = await getClient().messages.parse({
+  const setting = getSettings("ai").models.extraction;
+  const { client, model } = forModel(setting);
+  const response = await client.messages.create({
     model,
     max_tokens: 6000,
     system: SYSTEM,
@@ -238,9 +239,10 @@ async function askClaude(userId: number, resumeId: number | null, jobId: number,
     ],
     output_config: { format: zodOutputFormat(LlmResolution) },
   });
-  recordMessageUsage("form_answers", model, response.usage);
-  if (response.stop_reason === "refusal" || !response.parsed_output) throw new Error("no suggestions returned");
-  return { items: response.parsed_output.items, facts: `${profileFacts}\n${resumeText}\n${JSON.stringify(bank)}` };
+  recordMessageUsage("form_answers", setting, response);
+  if (response.stop_reason === "refusal") throw new Error("no suggestions returned");
+  const suggested = parseStructured(response, LlmResolution, "answer suggestions");
+  return { items: suggested.items, facts: `${profileFacts}\n${resumeText}\n${JSON.stringify(bank)}` };
 }
 
 export { normalizeQuestion };

@@ -1,11 +1,12 @@
 "use client";
 
 import type { ApplicationStatus } from "@jd/core/shared";
-import { AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, GripVertical, KanbanSquare, Mail, MailCheck, Search, Undo2, X } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, GripVertical, KanbanSquare, Mail, MailCheck, Plus, Search, Undo2, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActionStrip } from "@/components/ActionStrip";
+import { AddApplicationDialog } from "@/components/AddApplicationDialog";
 import { ApplicationPanel } from "@/components/ApplicationPanel";
 import { ReviewList } from "@/components/ReviewList";
 import { RoundChips } from "@/components/RoundTracker";
@@ -57,17 +58,17 @@ function syncUrl(params: { scope: number | null; q: string; app: number | null }
 
 const hay = (...parts: (string | null | undefined)[]) => parts.filter(Boolean).join(" ").toLowerCase();
 
-/** Six columns don't fit a phone: below md the board shows the stage you pick, one at a time. */
-function useIsPhone(): boolean {
-  const [phone, setPhone] = useState(false);
+/** The board has three shapes: one stage on a phone, a sideways row on a tablet, a grid at xl. */
+function useMedia(query: string): boolean {
+  const [matches, setMatches] = useState(false);
   useEffect(() => {
-    const mq = window.matchMedia("(max-width: 767px)");
-    const sync = () => setPhone(mq.matches);
+    const mq = window.matchMedia(query);
+    const sync = () => setMatches(mq.matches);
     sync();
     mq.addEventListener("change", sync);
     return () => mq.removeEventListener("change", sync);
-  }, []);
-  return phone;
+  }, [query]);
+  return matches;
 }
 
 export function PipelineBoard() {
@@ -82,7 +83,9 @@ export function PipelineBoard() {
   const [q, setQ] = useState("");
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [stage, setStage] = useState<string | null>(null);
-  const phone = useIsPhone();
+  const [adding, setAdding] = useState(false);
+  const phone = useMedia("(max-width: 767px)");
+  const wide = useMedia("(min-width: 1280px)");
 
   const router = useRouter();
   const load = useCallback(async () => {
@@ -252,6 +255,8 @@ export function PipelineBoard() {
   const current = (stage && COLUMNS.some((c) => c.key === stage) ? stage : null) ?? (COLUMNS.find((c) => countIn(c) > 0) ?? COLUMNS[2]!).key;
   const rejectedCount = cards.filter((c) => c.status === "rejected" || c.status === "withdrawn").length;
   const collapsed = !rejectedOpen && rejectedCount > 0;
+  /** Folded to a rail: an empty stage, or Rejected when you've collapsed it. */
+  const isRail = (col: (typeof COLUMNS)[number]) => !phone && (countIn(col) === 0 || (col.key === "rejected" && collapsed));
   const filtered = scope !== null || text.length > 0;
 
   return (
@@ -268,7 +273,8 @@ export function PipelineBoard() {
               <ScopeChip key={s.id} label={s.name} note={s.archived ? "Archived" : undefined} count={countFor(s.id)} active={scope === s.id} onClick={() => chooseScope(s.id)} />
             ))}
           </div>
-          <div className="relative lg:w-64">
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1 lg:w-64 lg:flex-none">
             <Search aria-hidden className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted" />
             <input
               type="search"
@@ -283,6 +289,10 @@ export function PipelineBoard() {
                 <X aria-hidden className="size-4" />
               </button>
             )}
+            </div>
+            <button type="button" className="btn min-h-11 shrink-0" onClick={() => setAdding(true)}>
+              <Plus aria-hidden className="size-4" /> Add application
+            </button>
           </div>
         </div>
       )}
@@ -338,9 +348,9 @@ export function PipelineBoard() {
           <div
             // `relative`: the sr-only spans inside cards are absolutely positioned, and without a
             // containing block here they escape the scroller and widen the whole page.
-            className={`relative gap-3 pb-2 ${
-              phone ? "block" : `flex snap-x overflow-x-auto xl:grid xl:overflow-visible ${collapsed ? "xl:grid-cols-[repeat(5,minmax(0,1fr))_3.25rem]" : "xl:grid-cols-6"}`
-            }`}
+            className={`relative gap-3 pb-2 ${phone ? "block" : "flex snap-x overflow-x-auto xl:grid xl:overflow-visible"}`}
+            // At xl every stage gets a track, and the ones folded to a rail get a narrow one.
+            style={wide ? { gridTemplateColumns: COLUMNS.map((c) => (isRail(c) ? "3.25rem" : "minmax(0,1fr)")).join(" ") } : undefined}
           >
             {(phone ? COLUMNS.filter((c) => c.key === current) : COLUMNS).map((col) => {
               const colCards = cards.filter((c) => col.statuses.includes(c.status));
@@ -366,6 +376,22 @@ export function PipelineBoard() {
                       <ChevronRight aria-hidden className="size-4 max-xl:rotate-90" />
                     </span>
                   </button>
+                );
+              }
+              // An empty stage doesn't need a sixth of the width; it keeps a rail you can drop onto.
+              if (colCards.length === 0 && !phone) {
+                return (
+                  <div
+                    key={col.key}
+                    {...dropProps}
+                    aria-label={`${col.title}: empty`}
+                    className={`flex min-h-11 w-14 shrink-0 snap-start flex-col items-center justify-start gap-2 rounded-xl border py-3 text-xs font-semibold tracking-wide text-muted uppercase transition-colors duration-150 xl:min-h-40 xl:w-auto ${
+                      over === col.key ? "border-accent bg-accent-soft" : "border-border bg-surface-2/40"
+                    }`}
+                  >
+                    <span aria-hidden className="xl:[writing-mode:vertical-rl]">{col.title}</span>
+                    <span aria-hidden className="tabular-nums">0</span>
+                  </div>
                 );
               }
               const groups = groupColumn(col.key, colCards, { grouped: !isRejected });
@@ -424,6 +450,17 @@ export function PipelineBoard() {
         </>
       )}
 
+      <AddApplicationDialog
+        open={adding}
+        onClose={() => setAdding(false)}
+        onAdded={(id) => {
+          setAdding(false);
+          // Open the card first: a refresh replaces the history entry and would drop ?app=.
+          openPanel(id);
+          changed();
+          setFeedback({ text: "Added to your pipeline." });
+        }}
+      />
       <ApplicationPanel appId={panel} applications={appOptions} onClose={() => openPanel(null)} onChanged={changed} />
       <FeedbackBar feedback={feedback} onDismiss={() => setFeedback(null)} />
     </div>
@@ -501,7 +538,7 @@ function Card({
         </span>
       )}
       <div className="flex gap-1">
-        <button type="button" onClick={onOpen} className="flex-1 text-left leading-snug font-semibold hover:text-accent">
+        <button type="button" onClick={onOpen} className="-my-1 flex-1 py-1 text-left leading-snug font-semibold hover:text-accent">
           {c.title}
         </button>
         <GripVertical aria-hidden className="size-4 shrink-0 text-muted" />
@@ -523,7 +560,7 @@ function Card({
         <span className="flex items-center gap-2">
           {c.appliedAt ? `Applied ${timeAgo(c.appliedAt)}` : `Updated ${timeAgo(c.updatedAt)}`}
           {c.emailCount > 0 && (
-            <button type="button" onClick={onOpen} className="inline-flex items-center gap-0.5 hover:text-accent" aria-label={`${c.emailCount} ${c.emailCount === 1 ? "email" : "emails"} about ${c.title}`}>
+            <button type="button" onClick={onOpen} className="-my-1 inline-flex items-center gap-0.5 py-1 hover:text-accent" aria-label={`${c.emailCount} ${c.emailCount === 1 ? "email" : "emails"} about ${c.title}`}>
               <Mail aria-hidden className="size-3" /> {c.emailCount}
             </button>
           )}

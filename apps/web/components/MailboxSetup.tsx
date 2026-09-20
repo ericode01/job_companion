@@ -21,13 +21,15 @@ import {
   Workflow,
   X,
 } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Benefits } from "@/components/Onboarding";
 import { ReviewList } from "@/components/ReviewList";
 import { Alert, SkeletonList } from "@/components/ui";
 import { timeAgo } from "@/lib/format";
-import type { ReviewJson } from "@/lib/pipeline-types";
+import type { ChangeJson, ReviewJson } from "@/lib/pipeline-types";
+import { STATUS_LABELS } from "@/lib/types";
 
 interface Conn {
   id: number;
@@ -50,6 +52,7 @@ interface Overview {
   testMailbox: boolean;
   connections: Conn[];
   review: ReviewJson[];
+  changes: ChangeJson[];
   applications: { id: number; label: string }[];
 }
 
@@ -129,6 +132,7 @@ export function MailboxSetup({ connected, error, isAdmin }: { connected: string 
             ))}
           </ul>
           <ReviewList id="check" items={data.review} applications={data.applications} onChanged={() => (void load(), router.refresh())} />
+          <RecentChanges changes={data.changes} />
           <AnotherMailbox data={data} onConnected={(addr) => (setJustConnected(addr), setFastPoll(true), void load())} />
         </>
       )}
@@ -665,5 +669,32 @@ function PastConnection({ conn: c, onChanged }: { conn: Conn; onChanged: () => v
         Delete its emails
       </button>
     </li>
+  );
+}
+
+/** What the mailbox actually did lately, so the page answers "is this still working?". */
+function RecentChanges({ changes }: { changes: ChangeJson[] }) {
+  if (!changes.length) return null;
+  return (
+    <section aria-labelledby="mail-activity" className="rounded-xl border border-border bg-surface p-3 sm:p-4">
+      <div className="mb-2 flex items-center gap-2">
+        <Workflow aria-hidden className="size-4 text-accent" />
+        <h2 id="mail-activity" className="section-title">
+          What changed recently
+        </h2>
+      </div>
+      <ul className="divide-y divide-border">
+        {changes.map((c) => (
+          <li key={c.eventId} className="flex flex-wrap items-center gap-x-2 gap-y-1 py-2 text-sm">
+            <Link href={`/pipeline?app=${c.applicationId}`} className="min-w-0 flex-1 truncate font-medium hover:text-accent">
+              {c.company} <span className="font-normal text-muted">· {c.title}</span>
+            </Link>
+            <span className="text-xs text-muted">
+              {c.fromStatus === null ? `Added as ${STATUS_LABELS[c.toStatus]}` : `${STATUS_LABELS[c.fromStatus]} → ${STATUS_LABELS[c.toStatus]}`} · {timeAgo(c.createdAt)}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

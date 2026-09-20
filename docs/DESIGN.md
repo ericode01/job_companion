@@ -677,3 +677,43 @@ gone quiet — neither has anything to do with which search found the job. Split
 - **Queries lost their `searchId` option** (`openActions`, `reviewQueue`, `emailChangesSince`); rows
   carry `searchId` and the browser filters. `GET /api/pipeline` replaced
   `GET /api/searches/:id/pipeline`; the Next-step card's application steps count all searches.
+
+## 22. UX pass on the whole app (v9.1)
+
+A review of the running app against real data (50 applications, 114 emails, 101 matches) found
+thirteen issues, fixed in three batches.
+
+### Trust
+- A pipeline move or "Done" the server refused used to revert in silence. Both keep the optimistic
+  update, then show a `FeedbackBar` (`components/ui.tsx`) with the reason and a **Retry**; "Done"
+  offers **Undo**, which reopens the action.
+- Linking by company now needs a close title match (`SURE_TITLE = 0.55` in `packages/mail/src/link.ts`).
+  Between 0.3 and 0.55 the email waits in "Check these" instead of joining a card, which stops
+  several roles at one company collapsing onto one application. The timeline names an email's own
+  role when it differs from the card's.
+
+### Mobile
+- `components/BottomNav.tsx` (phones only): Jobs · Pipeline · Answers · Mailbox with counts, above
+  the safe area. Previously those destinations hid in the avatar menu with no badge at all.
+- The board shows one stage at a time below `md` (segmented picker, remembered per browser), one
+  sideways-scrolling row between `md` and `xl`, and the six-column grid at `xl`. The phone page went
+  from ~7,900px to ~3,200px.
+- Jobs filters fold into a **Filters** button on phones.
+
+### Board and polish
+- Empty stages collapse to the same rail the Rejected column uses; at `xl` the grid tracks are
+  computed so rails stay narrow.
+- `@media (pointer: coarse)` raises `.btn`/`.input`/`select` to 44px, and the card title and avatar
+  grew to match.
+- **Add application** (`POST /api/pipeline`) tracks something applied to outside the app.
+- Money facts are formatted at render (`formatFactValue`), so "1770000000" reads "$1.77B".
+- The answers inbox shows how many are left, clamps very long questions, and moves focus to the next
+  one after saving.
+- Mailbox lists "What changed recently" and uses relative times.
+- Appearance control (System · Light · Dark) in the user menu, stamped before paint by a small
+  script in `app/layout.tsx`; the dark tokens are defined for both `prefers-color-scheme` and an
+  explicit `data-theme`.
+
+Two layout bugs surfaced while testing the sideways row: absolutely positioned `sr-only` spans
+escaped the scroller and widened the page (the row is now a containing block), and sticky group
+headers sat on the cards inside it (they pin only where the page itself scrolls).

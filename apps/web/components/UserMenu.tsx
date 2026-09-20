@@ -1,15 +1,46 @@
 "use client";
 
-import { LogOut, Puzzle, Settings, ShieldCheck, UserRound } from "lucide-react";
+import { LogOut, Monitor, Moon, Puzzle, Settings, ShieldCheck, Sun, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
+
+type Theme = "system" | "light" | "dark";
+const THEMES = [
+  { value: "system" as const, label: "System", icon: Monitor },
+  { value: "light" as const, label: "Light", icon: Sun },
+  { value: "dark" as const, label: "Dark", icon: Moon },
+];
+
+const THEME_KEY = "jc:theme";
+function readTheme(): Theme {
+  try {
+    const t = localStorage.getItem(THEME_KEY);
+    return t === "light" || t === "dark" ? t : "system";
+  } catch {
+    return "system";
+  }
+}
+/** System is the default, so choosing it removes the attribute rather than pinning a value. */
+function applyTheme(next: Theme) {
+  const root = document.documentElement;
+  if (next === "system") root.removeAttribute("data-theme");
+  else root.setAttribute("data-theme", next);
+  try {
+    if (next === "system") localStorage.removeItem(THEME_KEY);
+    else localStorage.setItem(THEME_KEY, next);
+  } catch {
+    /* per-browser convenience only */
+  }
+}
 
 export function UserMenu({ name, email, isAdmin }: { name: string; email: string; isAdmin: boolean }) {
   const router = useRouter();
   const menuId = useId();
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
+  const [theme, setTheme] = useState<Theme>("system");
+  useEffect(() => setTheme(readTheme()), []);
   const initials = name
     .split(/\s+/)
     .filter(Boolean)
@@ -48,7 +79,7 @@ export function UserMenu({ name, email, isAdmin }: { name: string; email: string
         aria-controls={menuId}
         aria-label={`Account menu for ${name}`}
         onClick={() => setOpen((o) => !o)}
-        className="grid size-10 place-items-center rounded-full border border-border bg-surface-2 text-sm font-semibold transition-colors hover:border-border-strong"
+        className="grid size-10 place-items-center rounded-full border border-border bg-surface-2 text-sm font-semibold transition-colors hover:border-border-strong [@media(pointer:coarse)]:size-11"
       >
         {initials || "?"}
       </button>
@@ -66,6 +97,27 @@ export function UserMenu({ name, email, isAdmin }: { name: string; email: string
             <Link href="/extension" className="flex min-h-11 items-center gap-2 rounded-lg px-2.5 text-sm hover:bg-surface-2 focus:bg-surface-2 focus:outline-none" onClick={() => setOpen(false)}>
               <Puzzle aria-hidden className="size-4 text-muted" /> Chrome extension
             </Link>
+          </div>
+          <div className="border-t border-border py-1">
+            <p className="px-2.5 pt-1 pb-1.5 text-xs font-medium text-muted">Appearance</p>
+            <div role="group" aria-label="Appearance" className="flex gap-1 px-1.5 pb-1">
+              {THEMES.map(({ value, label, icon: Icon }) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={theme === value}
+                  onClick={() => {
+                    applyTheme(value);
+                    setTheme(value);
+                  }}
+                  className={`flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-lg border text-xs font-medium transition-colors ${
+                    theme === value ? "border-accent bg-accent-soft text-accent" : "border-border text-muted hover:text-text"
+                  }`}
+                >
+                  <Icon aria-hidden className="size-3.5" /> {label}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="border-t border-border pt-1">
             <Link data-first href="/account" className="flex min-h-10 items-center gap-2 rounded-lg px-2.5 text-sm hover:bg-surface-2 focus:bg-surface-2 focus:outline-none" onClick={() => setOpen(false)}>

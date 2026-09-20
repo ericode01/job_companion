@@ -4,7 +4,7 @@ import type { CompanyProfile } from "@jd/core/shared";
 import { AlertTriangle, Newspaper, RefreshCw, Sparkles } from "lucide-react";
 import { SourceLink } from "@/components/Status";
 import { Skeleton, Spinner } from "@/components/ui";
-import { timeAgo } from "@/lib/format";
+import { formatFactValue, timeAgo } from "@/lib/format";
 import type { TaskStatus } from "@/lib/types";
 
 const STAGE_LABELS: Record<string, string> = {
@@ -30,11 +30,12 @@ interface Props {
 
 function Fact({ label, value, url }: { label: string; value: string | null; url?: string | null }) {
   if (!value) return null;
+  const shown = formatFactValue(label, value);
   return (
     <div>
       <dt className="text-xs font-medium text-muted">{label}</dt>
       <dd className="font-medium">
-        {value}
+        {shown}
         <SourceLink url={url} />
       </dd>
     </div>

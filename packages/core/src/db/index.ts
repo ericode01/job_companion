@@ -3,7 +3,7 @@ import Database from "better-sqlite3";
 import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { dataDir, repoRoot } from "../paths";
-import { reconcileAtsSettings } from "../settings";
+import { reconcileAiSettings, reconcileAtsSettings } from "../settings";
 import * as schema from "./schema";
 
 export type Db = BetterSQLite3Database<typeof schema>;
@@ -19,9 +19,10 @@ export function getDb(): Db {
   sqlite.pragma("busy_timeout = 5000");
   const db = drizzle(sqlite, { schema });
   migrate(db, { migrationsFolder: path.join(repoRoot(), "packages/core/drizzle") });
-  // Assign before reconciling: reconcileAtsSettings reads settings through getDb().
+  // Assign before reconciling: the reconcilers read settings through getDb().
   g.__jdDb = db;
   reconcileAtsSettings();
+  reconcileAiSettings();
   return db;
 }
 

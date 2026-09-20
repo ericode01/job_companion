@@ -2,7 +2,7 @@ import "server-only";
 import { getSettings, getUserSettings, type PublicUser, type SearchFilter } from "@jd/core";
 import { getDb, schema } from "@jd/core/db";
 import { getExtensionState, pendingInboxCount } from "@jd/apply";
-import { hasApiKey } from "@jd/llm";
+import { AI_KEY_HINT, hasApiKey } from "@jd/llm";
 import { activeConnections, chooseDashboard, mailForCards, openActions, reviewQueue } from "@jd/mail";
 import { currentMasterResume, enqueueFitScores, getFitScores } from "@jd/research";
 import { hydrateForFilter, runSearch, type SearchResult } from "@jd/sources";
@@ -379,7 +379,7 @@ export function companionSteps(user: PublicUser, d: Dashboard, stats: { newStron
     steps.unshift({
       id: "api-key",
       title: "AI features are off on this server",
-      detail: "An admin needs to set ANTHROPIC_API_KEY. Search still works with built-in rules.",
+      detail: `An admin needs to set ${AI_KEY_HINT}. Search still works with built-in rules.`,
       action: { label: "Learn more", href: "/account" },
       tone: "setup",
     });

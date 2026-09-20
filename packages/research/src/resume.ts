@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { dataDir, getProfile, getSettings, ResumeSourceSchema, saveProfile, type ResumeSource } from "@jd/core";
 import { getDb, schema } from "@jd/core/db";
-import { assertBudget, getClient, hasApiKey, recordMessageUsage } from "@jd/llm";
+import { AI_KEY_HINT, assertBudget, forModel, hasApiKey, parseStructured, recordMessageUsage } from "@jd/llm";
 import { and, desc, eq } from "drizzle-orm";
 import { extractText, getDocumentProxy } from "unpdf";
 import { assertUsableStop, NonRetryableError, sha1 } from "./util";
@@ -46,7 +46,7 @@ export async function saveMasterResume(userId: number, bytes: Uint8Array, fileNa
       parsedText: text,
       sourceHash: sha1(text),
       parseStatus: hasApiKey() ? "pending" : "skipped",
-      parseError: hasApiKey() ? null : "No API key: add ANTHROPIC_API_KEY to .env.local, then parse again.",
+      parseError: hasApiKey() ? null : `No API key: add ${AI_KEY_HINT} to .env.local, then parse again.`,
     })
     .returning()
     .get();
@@ -109,9 +109,10 @@ export async function parseResume(resumeId: number, opts: { background: boolean 
   const row = getResume(resumeId);
   if (!row) throw new NonRetryableError(`Resume ${resumeId} not found`);
   assertBudget(opts);
-  const model = getSettings("ai").models.resumeParse;
+  const setting = getSettings("ai").models.resumeParse;
+  const { client, model } = forModel(setting);
   const data = fs.readFileSync(row.filePath).toString("base64");
-  const response = await getClient().messages.parse({
+  const response = await client.messages.create({
     model,
     max_tokens: 16000,
     system: PARSE_SYSTEM,
@@ -126,11 +127,11 @@ export async function parseResume(resumeId: number, opts: { background: boolean 
     ],
     output_config: { format: zodOutputFormat(ResumeSourceSchema) },
   });
-  recordMessageUsage("resume_parse", model, response.usage);
+  recordMessageUsage("resume_parse", setting, response);
   assertUsableStop(response, "parse the resume");
-  if (!response.parsed_output) throw new NonRetryableError("Claude returned no resume structure.");
-  const updated = updateResumeSource(resumeId, response.parsed_output);
-  if (row.userId) prefillProfile(row.userId, response.parsed_output);
+  const parsed = parseStructured(response, ResumeSourceSchema, "resume structure");
+  const updated = updateResumeSource(resumeId, parsed);
+  if (row.userId) prefillProfile(row.userId, parsed);
   return updated;
 }
 

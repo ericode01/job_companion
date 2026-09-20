@@ -3,7 +3,7 @@
  * tailored resumes and mailbox checks. It also refreshes job boards and sends the daily digest
  * while it runs. Started by `pnpm dev`; run alone with `pnpm worker`.
  */
-import { getSettings, loadEnv, pruneSessions } from "@jd/core";
+import { getSettings, loadEnv, pruneSessions, refreshModelPrices } from "@jd/core";
 import { dueDigestUsers, followedSearches, runDigest } from "@jd/digest";
 import { dueConnections, enqueueSync, syncConnection } from "@jd/mail";
 import { briefFor, discoveryDue, enqueueDiscovery, enqueueFitScores, registerTaskHandler, startWorker } from "@jd/research";
@@ -73,6 +73,10 @@ function queueMailboxChecks() {
 }
 queueMailboxChecks();
 setInterval(queueMailboxChecks, 60_000);
+
+/** Model prices move, and every spend cap depends on them. The committed snapshot is the floor. */
+void refreshModelPrices();
+setInterval(() => void refreshModelPrices(), 24 * 3_600_000);
 
 const tick = async () => {
   pruneSessions();

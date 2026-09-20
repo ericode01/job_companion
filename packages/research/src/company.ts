@@ -5,7 +5,7 @@ import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { dataDir, getSettings, type CompanyProfile } from "@jd/core";
 import { z } from "zod";
 import { getDb, schema } from "@jd/core/db";
-import { assertBudget, getClient, recordMessageUsage } from "@jd/llm";
+import { assertBudget, forModel, parseModel, parseStructured, recordMessageUsage } from "@jd/llm";
 import { boardUrl } from "@jd/sources";
 import { eq } from "drizzle-orm";
 import { assertUsableStop, NonRetryableError, textOf } from "./util";
@@ -156,6 +156,31 @@ export function restrictSources(profile: CompanyProfile, consulted: string[], no
 
 const MAX_CONTINUATIONS = 4;
 
+/**
+ * A middling thinking budget for the research loop — but only where it is accepted. Haiku 4.5
+ * rejects `effort` with a 400, so asking for it there doesn't degrade the research, it stops it.
+ */
+function effortFor(model: string): { output_config?: { effort: "medium" } } {
+  return /haiku/i.test(model) ? {} : { output_config: { effort: "medium" } };
+}
+
+/**
+ * Research has to run somewhere whose search results this code can verify. `collectConsultedUrls`
+ * learns which URLs the model actually retrieved from Anthropic's `web_search_tool_result` blocks
+ * and citations, and `restrictSources` drops every source outside that set — so a provider that
+ * reports its searches differently wouldn't fail, it would quietly produce a profile where an
+ * invented URL is indistinguishable from a retrieved one. Until the OpenRouter search tool is
+ * wired up and measured, research stays on Anthropic.
+ */
+export function assertNativeSearch(setting: string): void {
+  const { route } = parseModel(setting);
+  if (route !== "anthropic") {
+    throw new NonRetryableError(
+      `Company research needs an anthropic: model — "${setting}" can't be checked for invented sources. Set Admin → Models → Company research back to an Anthropic model.`,
+    );
+  }
+}
+
 export async function researchCompany(
   companyId: number,
   opts: { background: boolean; reuseNotes?: boolean },
@@ -167,29 +192,32 @@ export async function researchCompany(
 
   const { models } = getSettings("ai");
   const { maxWebSearches, maxWebFetches } = getSettings("research");
-  const client = getClient();
+  assertNativeSearch(models.research);
   const careersUrl = boardUrl(c.atsType, c.atsSlug);
 
   let cached = opts.reuseNotes === false ? null : readNotesCache(companyId);
   if (!cached) {
-    cached = await gatherNotes(client, models.research, maxWebSearches, maxWebFetches, c, careersUrl, opts);
+    const research = forModel(models.research);
+    cached = await gatherNotes(research.client, research.model, maxWebSearches, maxWebFetches, c, careersUrl, opts);
     writeNotesCache(companyId, cached);
   }
   const { notes, consulted } = cached;
 
-  // Phase 2: structure the notes (no tools, so structured output is safe to use).
-  const structured = await client.messages.parse({
-    model: models.extraction,
+  // Phase 2: structure the notes. No tools, so this one can run anywhere — and usually should,
+  // since it is plain extraction.
+  const extraction = forModel(models.extraction);
+  const structured = await extraction.client.messages.create({
+    model: extraction.model,
     max_tokens: 8000,
     system: STRUCTURE_SYSTEM,
     messages: [{ role: "user", content: `Company: ${c.name}\n\n<notes>\n${notes}\n</notes>` }],
     output_config: { format: zodOutputFormat(StructuredNotesSchema) },
   });
-  recordMessageUsage("company_structure", models.extraction, structured.usage);
+  recordMessageUsage("company_structure", models.extraction, structured);
   assertUsableStop(structured, "structure the research notes");
-  if (!structured.parsed_output) throw new NonRetryableError("Could not structure the research notes.");
+  const notesJson = parseStructured(structured, StructuredNotesSchema, "structured version of the research notes");
 
-  const data = restrictSources(toCompanyProfile(structured.parsed_output), consulted, notes);
+  const data = restrictSources(toCompanyProfile(notesJson), consulted, notes);
   const values = { companyId, data, consultedUrls: consulted, model: cached.model, enrichedAt: new Date() };
   return db
     .insert(companyProfile)
@@ -239,9 +267,9 @@ async function gatherNotes(
   for (let i = 0; i <= MAX_CONTINUATIONS; i++) {
     const response = await client.messages
       // Auto-caching lets each server-side search round (and paused-turn continuations) read the prior context from cache.
-      .stream({ model, max_tokens: 16000, system: RESEARCH_SYSTEM, tools, messages, cache_control: { type: "ephemeral" }, output_config: { effort: "medium" } })
+      .stream({ model, max_tokens: 16000, system: RESEARCH_SYSTEM, tools, messages, cache_control: { type: "ephemeral" }, ...effortFor(model) })
       .finalMessage();
-    recordMessageUsage("company_research", model, response.usage);
+    recordMessageUsage("company_research", model, response);
     responses.push(response);
     if (response.stop_reason !== "pause_turn") {
       final = response;

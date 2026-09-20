@@ -9,16 +9,17 @@ useTempDataDir();
 /* ---- fake Claude client ---- */
 const parseQueue: unknown[] = [];
 const streamQueue: Partial<Anthropic.Message>[] = [];
-const calls: { kind: "parse" | "stream"; params: Anthropic.MessageCreateParams }[] = [];
+const calls: { kind: "create" | "stream"; params: Anthropic.MessageCreateParams }[] = [];
 const usage = { input_tokens: 100, output_tokens: 50, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } as Anthropic.Usage;
 
 const fakeClient = {
   messages: {
-    parse: vi.fn(async (params: Anthropic.MessageCreateParams) => {
-      calls.push({ kind: "parse", params });
+    // The real API returns structured output as JSON in a text block; parseStructured reads it.
+    create: vi.fn(async (params: Anthropic.MessageCreateParams) => {
+      calls.push({ kind: "create", params });
       const next = parseQueue.shift();
       if (next instanceof Error) throw next;
-      return { stop_reason: "end_turn", content: [], usage, parsed_output: next };
+      return { stop_reason: "end_turn", content: [{ type: "text", text: JSON.stringify(next), citations: null }], usage };
     }),
     stream: vi.fn((params: Anthropic.MessageCreateParams) => {
       // Copy messages: the caller mutates the array after the call.
@@ -31,8 +32,9 @@ const fakeClient = {
 
 vi.mock("@jd/llm", async (orig) => ({
   ...(await orig<typeof import("@jd/llm")>()),
-  getClient: () => fakeClient,
+  forModel: (setting: string) => ({ client: fakeClient, model: setting.split(":").pop()!, route: setting.split(":")[0] }),
   hasApiKey: () => true,
+  hasKeyFor: () => true,
 }));
 
 const core = await import("@jd/core");
@@ -247,6 +249,9 @@ describe("company research", () => {
     const tools = streams[0]!.params.tools!.map((t) => ("type" in t ? t.type : ""));
     expect(tools).toEqual(["web_search_20250305"]); // basic search; page fetches are off by default
     expect(streams[0]!.params.cache_control).toEqual({ type: "ephemeral" });
+    // Sonnet takes a thinking budget; Haiku 400s on it, which would stop research rather than
+    // slow it. The model in this test is the default, claude-haiku-4-5.
+    expect(streams[0]!.params.output_config?.effort).toBeUndefined();
 
     const d = row.data;
     expect(d.products.map((p) => p.sourceUrl)).toEqual(["https://acme.com/ledger", null]);
@@ -259,6 +264,15 @@ describe("company research", () => {
 
     expect(row.consultedUrls).toEqual(expect.arrayContaining(["https://news.example/acme-series-c", "https://acme.com/about"]));
     expect(research.isProfileStale(row)).toBe(false);
+  });
+
+  it("asks a Sonnet-class model for a thinking budget, and never asks Haiku", async () => {
+    core.saveSettings("ai", { models: { research: "anthropic:claude-sonnet-5" } });
+    streamQueue.push({ stop_reason: "end_turn", content: [{ type: "text", text: "Notes.", citations: null } as Anthropic.TextBlock] });
+    parseQueue.push(structured);
+    await research.researchCompany(companyId, { background: false, reuseNotes: false });
+    expect(calls.filter((c) => c.kind === "stream").at(-1)!.params.output_config?.effort).toBe("medium");
+    core.saveSettings("ai", {});
   });
 
   it("reuses cached notes when structuring is retried", async () => {

@@ -24,6 +24,9 @@
     "digest": "tsx scripts/digest.ts",
     "refresh": "tsx scripts/refresh.ts",
     "find-boards": "tsx scripts/find-boards.ts",
+    "prices:refresh": "tsx scripts/refresh-prices.ts",
+    "probe": "tsx scripts/or-probe.ts",
+    "compare-models": "tsx scripts/compare-models.ts",
     "serve": "concurrently -k -n web,worker -c blue,magenta \"pnpm --filter @jd/web start\" \"pnpm worker\""
   },
   "devDependencies": {

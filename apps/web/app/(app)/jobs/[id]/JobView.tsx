@@ -279,7 +279,7 @@ function FitCard({ data }: { data: JobData }) {
       </div>
     );
   } else if (!hasApiKey) {
-    body = <p className="text-sm text-muted">Add ANTHROPIC_API_KEY to .env.local to score your fit.</p>;
+    body = <p className="text-sm text-muted">Add an AI API key to .env.local to score your fit.</p>;
   } else if (!resume) {
     body = (
       <p className="text-sm text-muted">

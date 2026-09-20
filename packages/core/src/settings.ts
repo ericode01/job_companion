@@ -1,10 +1,25 @@
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "./db";
+import { loadEnv } from "./paths";
 import { settings, userSetting } from "./db/schema";
 import { ATS_TYPES } from "./types";
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/** OpenRouter's Auto Router: it picks the model per request. Spelled as it spells it. */
+export const AUTO_ROUTER = "openrouter:openrouter/auto";
+/**
+ * The default for extraction: pulling structure out of text, where there is a right answer on the
+ * page. Chosen by measurement (DESIGN.md §23) — it filled this app's schemas 27 times out of 27,
+ * where the cheaper open-weight models mostly couldn't, and it sorted real email 14/15 the same way
+ * Haiku did at a twentieth of the price.
+ *
+ * Pinned rather than left to the Auto Router: over repeats of one structured call Auto ran
+ * 3.2s / 14s / 31.8s against this model's steady 1.3–1.8s, because it lands on a different provider
+ * each time. Everything here is either interactive or comparable across calls.
+ */
+const CHEAP = "openrouter:google/gemini-2.5-flash-lite";
 
 /**
  * System settings, edited in the admin portal. Adding a setting = adding a field here (with a
@@ -26,15 +41,37 @@ export const SettingsSchemas = {
     knownAts: z.array(z.string()).default([]),
   }),
   ai: z.object({
+    /**
+     * Each value is "<route>:<model id as that route spells it>", e.g. "anthropic:claude-sonnet-5"
+     * or "openrouter:deepseek/deepseek-v4-flash". A value with no colon means Anthropic direct —
+     * the spelling used before OpenRouter existed, kept working so stored rows never break.
+     */
     models: z
       .object({
-        queryParse: z.string().default("claude-haiku-4-5"),
-        extraction: z.string().default("claude-haiku-4-5"),
-        fitScore: z.string().default("claude-haiku-4-5"),
-        research: z.string().default("claude-sonnet-5"),
-        writing: z.string().default("claude-sonnet-5"),
-        resumeParse: z.string().default("claude-sonnet-5"),
-        emailClassify: z.string().default("claude-haiku-4-5"),
+        queryParse: z.string().default(CHEAP),
+        extraction: z.string().default(CHEAP),
+        /**
+         * Judgement, not extraction, and the one purpose no cheap model could take. On 12 real
+         * postings they drifted 16–18 points from Haiku and changed the verdict band on 9 to 11 of
+         * them. Scores are ranked against each other, so that reorders the pipeline. DESIGN.md §23.
+         */
+        fitScore: z.string().default("anthropic:claude-haiku-4-5"),
+        research: z.string().default("anthropic:claude-haiku-4-5"),
+        writing: z.string().default("anthropic:claude-sonnet-5"),
+        resumeParse: z.string().default("anthropic:claude-sonnet-5"),
+        emailClassify: z.string().default(CHEAP),
+      })
+      .prefault({}),
+    /** Settings for OpenRouter's Auto Router, which apply whenever a model is set to it. */
+    autoRouter: z
+      .object({
+        /** Cost-percentile band it may pick from: low = the cheapest 20% of ranked candidates. */
+        costTier: z.enum(["low", "medium", "high", "xhigh", "max"]).default("low"),
+        /** Hard ceilings, USD per million tokens. Null = no ceiling. */
+        maxPromptUsd: z.number().min(0).nullable().default(0.5),
+        maxCompletionUsd: z.number().min(0).nullable().default(2),
+        /** Model patterns it must not pick, e.g. "openai/*". */
+        excludedModels: z.array(z.string()).default([]),
       })
       .prefault({}),
     dailyCapUsd: z.number().min(0).nullable().default(null),
@@ -45,8 +82,13 @@ export const SettingsSchemas = {
   }),
   research: z.object({
     researchOnOpen: z.boolean().default(true),
-    refreshAfterDays: z.number().int().min(1).max(365).default(30),
-    maxWebSearches: z.number().int().min(1).max(20).default(5),
+    /** Funding and headcount don't change monthly, and each re-research is a fresh search bill. */
+    refreshAfterDays: z.number().int().min(1).max(365).default(90),
+    /**
+     * Each search's results join the context that every later turn re-reads, so this drives the
+     * token bill as much as the per-search fee. Three covers the company, its funding and its news.
+     */
+    maxWebSearches: z.number().int().min(1).max(20).default(3),
     maxWebFetches: z.number().int().min(0).max(10).default(0),
     scoreSearchResults: z.boolean().default(true),
     maxScoredPerSearch: z.number().int().min(1).max(2000).default(200),
@@ -145,6 +187,34 @@ export function saveSettings<S extends SettingsSection>(section: S, value: unkno
     .onConflictDoUpdate({ target: settings.key, set: { value: data, updatedAt: new Date() } })
     .run();
   return data;
+}
+
+/**
+ * Rewrites model settings saved before routes existed ("claude-haiku-4-5") into the qualified
+ * spelling ("anthropic:claude-haiku-4-5"), once. Both forms work, so this only makes the stored
+ * row say out loud where its calls go. Called after migrations, beside reconcileAtsSettings.
+ */
+export function reconcileAiSettings(): void {
+  const stored = getDb().select().from(settings).where(eq(settings.key, "ai")).get();
+  if (!stored) return; // no row: the defaults are already qualified
+  const current = getSettings("ai");
+  const entries = Object.entries(current.models);
+  if (entries.every(([, v]) => v.includes(":"))) return;
+
+  loadEnv();
+  const canRoute = Boolean(process.env.OPENROUTER_API_KEY);
+  const chosen = ((stored.value as { models?: Record<string, string> }).models ?? {}) as Record<string, string>;
+  const models = Object.fromEntries(
+    entries.map(([purpose, fallback]) => {
+      const was = chosen[purpose];
+      if (was) return [purpose, was.includes(":") ? was : `anthropic:${was}`];
+      // A purpose this install never chose gets the new default — unless that default needs a key
+      // this server hasn't got, in which case adopting it would quietly turn the feature off.
+      if (!canRoute && fallback.startsWith("openrouter:")) return [purpose, "anthropic:claude-haiku-4-5"];
+      return [purpose, fallback];
+    }),
+  );
+  saveSettings("ai", { ...current, models });
 }
 
 /**

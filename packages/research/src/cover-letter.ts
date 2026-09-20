@@ -1,6 +1,6 @@
 import { getProfile, getSettings } from "@jd/core";
 import { getDb, schema } from "@jd/core/db";
-import { assertBudget, getClient, recordMessageUsage } from "@jd/llm";
+import { assertBudget, forModel, recordMessageUsage } from "@jd/llm";
 import { eq } from "drizzle-orm";
 import { getCompanyProfile } from "./company";
 import { getJobAnalysis } from "./job";
@@ -44,7 +44,8 @@ export async function generateCoverLetter(applicationId: number, opts: { backgro
     ? [profile.overview, ...profile.products.map((p) => `${p.name}: ${p.description}`)].filter(Boolean).join("\n")
     : "none";
 
-  const model = getSettings("ai").models.writing;
+  const setting = getSettings("ai").models.writing;
+  const { client, model } = forModel(setting);
   const resumeText = resumeForPrompt(resume);
   const today = new Date().toISOString().slice(0, 10);
   const messages: Anthropic.MessageParam[] = [
@@ -70,8 +71,8 @@ export async function generateCoverLetter(applicationId: number, opts: { backgro
   const facts = `${resumeText}\n${me?.about ?? ""}\n${companyNotes}\n${row.job.descriptionText}\n${name}`;
 
   const write = async () => {
-    const response = await getClient().messages.create({ model, max_tokens: 4000, system: SYSTEM, messages });
-    recordMessageUsage("cover_letter", model, response.usage);
+    const response = await client.messages.create({ model, max_tokens: 4000, system: SYSTEM, messages });
+    recordMessageUsage("cover_letter", setting, response);
     assertUsableStop(response, "write the cover letter");
     return { response, letter: textOf(response).trim() };
   };

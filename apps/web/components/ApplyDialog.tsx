@@ -338,7 +338,7 @@ function ApplyDialog({ jobId, title, company, applyUrl, searchId, onApplied, onC
                 </label>
               ))}
             </div>
-            {needsLetter && !state.hasApiKey && <Alert>Add ANTHROPIC_API_KEY to .env.local to generate cover letters.</Alert>}
+            {needsLetter && !state.hasApiKey && <Alert>Add an AI API key to .env.local to generate cover letters.</Alert>}
             {needsLetter && state.hasApiKey && (
               <div className="space-y-2 pt-1">
                 {generating ? (

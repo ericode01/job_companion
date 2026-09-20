@@ -9,7 +9,7 @@ export default function AdminAi() {
     <div className="space-y-5">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">AI and budget</h1>
-        <p className="text-sm text-muted">One Claude API key pays for everyone on this server. Spend by person is on the Overview.</p>
+        <p className="text-sm text-muted">The server’s API keys pay for everyone on it. Spend by person is on the Overview.</p>
       </div>
       <SectionForm section={AI} />
       <SectionForm section={RESEARCH} />

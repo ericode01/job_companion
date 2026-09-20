@@ -4,7 +4,7 @@ import path from "node:path";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { dataDir, getSettings, TailoredResumeSchema, type ResumeChange, type ResumeSource, type TailoredResume } from "@jd/core";
 import { getDb, schema } from "@jd/core/db";
-import { assertBudget, getClient, recordMessageUsage } from "@jd/llm";
+import { assertBudget, forModel, parseStructured, recordMessageUsage } from "@jd/llm";
 import { and, desc, eq } from "drizzle-orm";
 import { getJobAnalysis } from "./job";
 import { currentMasterResume, getResume, resumeForPrompt, type Resume } from "./resume";
@@ -123,17 +123,6 @@ export function applyTailoring(master: ResumeSource, tailored: TailoredResume): 
 }
 
 /** A cut-off response fails JSON parsing inside the SDK; say what actually happened. */
-async function parseOrExplain<T>(call: () => Promise<T>): Promise<T> {
-  try {
-    return await call();
-  } catch (err) {
-    if (err instanceof Error && /parse structured output/i.test(err.message)) {
-      throw new NonRetryableError("The tailored resume came back incomplete (too long). Try again; if it keeps failing, shorten your master resume.");
-    }
-    throw err;
-  }
-}
-
 /** Writes a tailored resume for one job and renders its PDF. */
 export async function tailorResume(userId: number, jobId: number, opts: { background: boolean }): Promise<TailorResult> {
   const db = getDb();
@@ -150,8 +139,9 @@ export async function tailorResume(userId: number, jobId: number, opts: { backgr
 
   const masterSource = master.source;
   const analysis = getJobAnalysis(jobId)?.data;
-  const model = getSettings("ai").models.writing;
-  const response = await parseOrExplain(() => getClient().messages.parse({
+  const setting = getSettings("ai").models.writing;
+  const { client, model } = forModel(setting);
+  const response = await client.messages.create({
     model,
     max_tokens: 16000,
     system: SYSTEM,
@@ -170,13 +160,18 @@ export async function tailorResume(userId: number, jobId: number, opts: { backgr
       },
     ],
     output_config: { format: zodOutputFormat(TailoredResumeSchema) },
-  }));
-  recordMessageUsage("tailor_resume", model, response.usage);
+  });
+  recordMessageUsage("tailor_resume", setting, response);
   assertUsableStop(response, "tailor the resume");
-  if (!response.parsed_output) throw new NonRetryableError("Claude returned no tailored resume.");
+  let tailored: TailoredResume;
+  try {
+    tailored = parseStructured(response, TailoredResumeSchema, "tailored resume");
+  } catch {
+    // Overwhelmingly this is the JSON being cut off at max_tokens on a long resume.
+    throw new NonRetryableError("The tailored resume came back incomplete (too long). Try again; if it keeps failing, shorten your master resume.");
+  }
 
-
-  const { source, warnings, changes } = applyTailoring(masterSource, response.parsed_output);
+  const { source, warnings, changes } = applyTailoring(masterSource, tailored);
   const dir = path.join(dataDir(), "files", "resumes", String(userId));
   fs.mkdirSync(dir, { recursive: true });
   const filePath = path.join(dir, `tailored-${jobId}-${crypto.randomUUID()}.pdf`);

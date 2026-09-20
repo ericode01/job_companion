@@ -1,8 +1,8 @@
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { FitResultSchema, getSettings } from "@jd/core";
 import { getDb, schema } from "@jd/core/db";
-import { assertBudget, getClient, recordMessageUsage } from "@jd/llm";
-import { and, eq, inArray } from "drizzle-orm";
+import { assertBudget, forModel, parseStructured, recordMessageUsage } from "@jd/llm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { getResume, resumeForPrompt } from "./resume";
 import { assertUsableStop, NonRetryableError } from "./util";
 
@@ -24,7 +24,18 @@ Rules:
 - talkingPoints: 2–4 concrete things from the resume to emphasize for this role.
 - verdict must match the score band.`;
 
-export async function scoreFit(jobId: number, resumeId: number, opts: { background: boolean }): Promise<JobFitRow> {
+/**
+ * Scores one job against one resume.
+ *
+ * `model` and `persist` exist for scripts/compare-models.ts, which re-scores jobs on a candidate
+ * model to see how far it drifts from the stored scores. Comparing has to use this exact prompt to
+ * mean anything, and it must not overwrite the scores it is comparing against.
+ */
+export async function scoreFit(
+  jobId: number,
+  resumeId: number,
+  opts: { background: boolean; model?: string; persist?: boolean },
+): Promise<JobFitRow> {
   const db = getDb();
   const resume = getResume(resumeId);
   if (!resume) throw new NonRetryableError(`Resume ${resumeId} not found`);
@@ -37,9 +48,10 @@ export async function scoreFit(jobId: number, resumeId: number, opts: { backgrou
   if (!row) throw new NonRetryableError(`Job ${jobId} not found`);
   assertBudget(opts);
 
-  const model = getSettings("ai").models.fitScore;
+  const setting = opts.model ?? getSettings("ai").models.fitScore;
+  const { client, model } = forModel(setting);
   const j = row.job;
-  const response = await getClient().messages.parse({
+  const response = await client.messages.create({
     model,
     max_tokens: 3000,
     // Rubric + resume are identical across every job scored, so they form the cached prefix.
@@ -52,12 +64,12 @@ export async function scoreFit(jobId: number, resumeId: number, opts: { backgrou
     ],
     output_config: { format: zodOutputFormat(FitResultSchema) },
   });
-  recordMessageUsage("fit_score", model, response.usage);
+  recordMessageUsage("fit_score", setting, response);
   assertUsableStop(response, "score this job");
-  const out = response.parsed_output;
-  if (!out) throw new NonRetryableError("Claude returned no fit assessment.");
+  const out = parseStructured(response, FitResultSchema, "fit assessment");
   const score = Math.max(0, Math.min(100, Math.round(out.score)));
   const values = { jobId, resumeHash: resume.sourceHash, score, data: { ...out, score }, model, scoredAt: new Date() };
+  if (opts.persist === false) return { id: 0, ...values } as JobFitRow;
   return db
     .insert(jobFit)
     .values(values)
@@ -72,6 +84,28 @@ export function getFit(jobId: number, resumeHash: string): JobFitRow | null {
     .from(jobFit)
     .where(and(eq(jobFit.jobId, jobId), eq(jobFit.resumeHash, resumeHash)))
     .get() ?? null;
+}
+
+export interface ScoredSample {
+  jobId: number;
+  title: string;
+  score: number;
+  model: string;
+  resumeId: number;
+  userId: number | null;
+}
+
+/** The most recently scored jobs, with the resume they were scored against. For comparing models. */
+export function recentlyScored(limit: number): ScoredSample[] {
+  const { resume } = schema;
+  return getDb()
+    .select({ jobId: jobFit.jobId, title: job.title, score: jobFit.score, model: jobFit.model, resumeId: resume.id, userId: resume.userId })
+    .from(jobFit)
+    .innerJoin(job, eq(job.id, jobFit.jobId))
+    .innerJoin(resume, eq(resume.sourceHash, jobFit.resumeHash))
+    .orderBy(desc(jobFit.scoredAt))
+    .limit(limit)
+    .all();
 }
 
 export function getFitScores(jobIds: number[], resumeHash: string): Map<number, number> {

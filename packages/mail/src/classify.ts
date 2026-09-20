@@ -1,6 +1,6 @@
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { type EmailClassification, EmailClassificationSchema, getSettings, type InterviewRound } from "@jd/core";
-import { assertBudget, getClient, hasApiKey, recordMessageUsage } from "@jd/llm";
+import { assertBudget, forModel, hasKeyFor, parseStructured, recordMessageUsage } from "@jd/llm";
 import { ATS_SENDER_DOMAINS } from "./prefilter";
 import type { RawEmail } from "./types";
 
@@ -50,11 +50,18 @@ export function applicationList(apps: ApplicationHint[]): string {
   return apps.map((a) => `${a.id}: ${a.company} — ${a.title} [${a.status}]`).join("\n");
 }
 
-export async function classifyEmail(email: RawEmail, apps: ApplicationHint[], timeZone = "UTC"): Promise<{ result: EmailClassification; by: "llm" | "rules" }> {
-  if (!hasApiKey()) return { result: classifyWithRules(email), by: "rules" };
+/** `model` overrides the configured one, for scripts/compare-models.ts. */
+export async function classifyEmail(
+  email: RawEmail,
+  apps: ApplicationHint[],
+  timeZone = "UTC",
+  opts: { model?: string } = {},
+): Promise<{ result: EmailClassification; by: "llm" | "rules" }> {
+  const setting = opts.model ?? getSettings("ai").models.emailClassify;
+  if (!hasKeyFor(setting)) return { result: classifyWithRules(email), by: "rules" };
   assertBudget({ background: true });
-  const model = getSettings("ai").models.emailClassify;
-  const response = await getClient().messages.parse({
+  const { client, model } = forModel(setting);
+  const response = await client.messages.create({
     model,
     max_tokens: 1024,
     system: SYSTEM,
@@ -66,10 +73,16 @@ export async function classifyEmail(email: RawEmail, apps: ApplicationHint[], ti
     ],
     output_config: { format: zodOutputFormat(EmailClassificationSchema) },
   });
-  recordMessageUsage("email_classify", model, response.usage);
-  const parsed = response.parsed_output;
-  if (response.stop_reason === "refusal" || !parsed) return { result: classifyWithRules(email), by: "rules" };
-  return { result: normalize(parsed, apps), by: "llm" };
+  recordMessageUsage("email_classify", setting, response);
+  if (response.stop_reason === "refusal") return { result: classifyWithRules(email), by: "rules" };
+  try {
+    return { result: normalize(parseStructured(response, EmailClassificationSchema, "classification"), apps), by: "llm" };
+  } catch (err) {
+    // Falling back to rules keeps sorting working, but silently: a model that can never fill this
+    // schema would look fine while every email was really sorted by keyword. Say so in the log.
+    console.warn(`[mail] ${setting} couldn't classify "${email.subject}": ${err instanceof Error ? err.message : String(err)}. Sorted by rules instead.`);
+    return { result: classifyWithRules(email), by: "rules" };
+  }
 }
 
 function normalize(r: EmailClassification, apps: ApplicationHint[]): EmailClassification {

@@ -1,11 +1,11 @@
-import type Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { getSettings, type DiscoveryCandidate, type SearchFilter } from "@jd/core";
 import { getDb, schema } from "@jd/core/db";
-import { assertBudget, getClient, recordMessageUsage } from "@jd/llm";
+import { assertBudget, forModel, parseStructured, recordMessageUsage } from "@jd/llm";
 import { adapters, boardName, findAtsForSite, storeCompanyJobs } from "@jd/sources";
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
+import { assertNativeSearch } from "./company";
 import { assertUsableStop, NonRetryableError, textOf } from "./util";
 
 const { company, discoveryRun } = schema;
@@ -62,7 +62,6 @@ function trackedCompanies(limit = 400): string[] {
 }
 
 async function proposeCompanies(
-  client: Anthropic,
   brief: string,
   wanted: number,
   opts: { background: boolean },
@@ -70,10 +69,12 @@ async function proposeCompanies(
   const { models } = getSettings("ai");
   const { maxWebSearches } = getSettings("research");
   const tracked = trackedCompanies();
+  assertNativeSearch(models.research);
+  const research = forModel(models.research);
 
-  const response = await client.messages
+  const response = await research.client.messages
     .stream({
-      model: models.research,
+      model: research.model,
       max_tokens: 4000,
       system: SEARCH_SYSTEM,
       tools: [{ type: "web_search_20250305", name: "web_search", max_uses: maxWebSearches }],
@@ -86,23 +87,24 @@ async function proposeCompanies(
       ],
     })
     .finalMessage();
-  recordMessageUsage("discover_companies", models.research, response.usage);
+  recordMessageUsage("discover_companies", models.research, response);
   assertUsableStop(response, "find companies");
 
   const listing = textOf(response).trim();
   if (!listing) throw new NonRetryableError("The search came back empty.");
   assertBudget(opts);
 
-  const extracted = await client.messages.parse({
-    model: models.extraction,
+  const extraction = forModel(models.extraction);
+  const extracted = await extraction.client.messages.create({
+    model: extraction.model,
     max_tokens: 4000,
     system: EXTRACT_SYSTEM,
     messages: [{ role: "user", content: listing }],
     output_config: { format: zodOutputFormat(CandidatesSchema) },
   });
-  recordMessageUsage("discover_extract", models.extraction, extracted.usage);
+  recordMessageUsage("discover_extract", models.extraction, extracted);
   assertUsableStop(extracted, "read the list of companies");
-  return extracted.parsed_output?.companies ?? [];
+  return parseStructured(extracted, CandidatesSchema, "list of companies").companies;
 }
 
 const cleanDomain = (d: string) =>
@@ -204,7 +206,7 @@ export async function discoverCompanies(runId: number, opts: { background: boole
     db.update(discoveryRun).set(patch).where(eq(discoveryRun.id, runId)).run();
 
   try {
-    const proposed = await proposeCompanies(getClient(), run.prompt, maxCompaniesPerDiscovery, opts);
+    const proposed = await proposeCompanies(run.prompt, maxCompaniesPerDiscovery, opts);
     let candidates: DiscoveryCandidate[] = proposed.slice(0, maxCompaniesPerDiscovery).map((p) => ({
       name: p.name.trim(),
       domain: p.domain?.trim() || null,

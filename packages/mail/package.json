@@ -1,0 +1,24 @@
+{
+  "name": "@jd/mail",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./shared": "./src/shared.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.126.0",
+    "@jd/apply": "workspace:*",
+    "@jd/core": "workspace:*",
+    "@jd/llm": "workspace:*",
+    "@jd/sources": "workspace:*",
+    "drizzle-orm": "0.45.2",
+    "imapflow": "^2.0.5",
+    "mailparser": "^3.9.28",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/mailparser": "^3.4.6"
+  }
+}

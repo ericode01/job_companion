@@ -1,0 +1,15 @@
+{
+  "name": "@jd/llm",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.126.0",
+    "@jd/core": "workspace:*",
+    "@jd/sources": "workspace:*",
+    "zod": "^4.6.5"
+  }
+}

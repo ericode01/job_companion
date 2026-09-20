@@ -1,0 +1,37 @@
+{
+  "name": "@jd/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev -H 127.0.0.1 -p 4317",
+    "build": "next build",
+    "start": "next start -H ${HOST:-127.0.0.1} -p ${PORT:-4317}"
+  },
+  "dependencies": {
+    "@jd/apply": "workspace:*",
+    "@jd/core": "workspace:*",
+    "@jd/digest": "workspace:*",
+    "@jd/llm": "workspace:*",
+    "@jd/mail": "workspace:*",
+    "@jd/research": "workspace:*",
+    "@jd/sources": "workspace:*",
+    "drizzle-orm": "0.45.2",
+    "imapflow": "^2.0.5",
+    "lucide-react": "^1.46.0",
+    "mailparser": "^3.9.28",
+    "next": "^16.3.5",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "sanitize-html": "^2.17.7",
+    "server-only": "^0.0.1",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/sanitize-html": "^2.16.1",
+    "tailwindcss": "^4.3.3"
+  }
+}

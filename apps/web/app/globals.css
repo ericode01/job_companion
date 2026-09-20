@@ -1,0 +1,139 @@
+@import "tailwindcss";
+
+/*
+ * Design tokens: "AI companion" direction from ui-ux-pro-max (AI/Chatbot Platform → AI-Native UI:
+ * neutral surfaces + one indigo accent, context cards with an accent edge), keeping the Job Board
+ * profile's flat style (borders over shadows) and green for pay/success.
+ * Every text/background pair below is checked at >= 4.5:1 (WCAG AA) in both themes.
+ */
+:root {
+  --bg: #f7f7f9;
+  --surface: #ffffff;
+  --surface-2: #f2f2f5;
+  --border: #e4e4e9;
+  --border-strong: #cfcfd8;
+  --text: #18181b;
+  --muted: #52525b;
+  --accent: #4f46e5;
+  --on-accent: #ffffff;
+  --accent-soft: #eeeffe;
+  --good: #15803d;
+  --good-soft: #e8f7ee;
+  --warn: #92400e;
+  --warn-soft: #fef3c7;
+  --danger: #b91c1c;
+  --danger-soft: #fee2e2;
+  --ring: #6366f1;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0c0c10;
+    --surface: #141419;
+    --surface-2: #1c1c23;
+    --border: #2a2a34;
+    --border-strong: #3a3a47;
+    --text: #f4f4f5;
+    --muted: #a1a1aa;
+    --accent: #818cf8;
+    --on-accent: #0c0c10;
+    --accent-soft: #23214a;
+    --good: #4ade80;
+    --good-soft: #0f2a1b;
+    --warn: #fbbf24;
+    --warn-soft: #2e2308;
+    --danger: #f87171;
+    --danger-soft: #3a1515;
+    --ring: #a5b4fc;
+    color-scheme: dark;
+  }
+}
+
+@theme inline {
+  --font-sans: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-on-accent: var(--on-accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-good: var(--good);
+  --color-good-soft: var(--good-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-ring: var(--ring);
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Tailwind v4 preflight resets button cursors; interactive controls should look clickable. */
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+select:not(:disabled),
+summary,
+label:has(> input[type="checkbox"]:not(:disabled)) {
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+@layer components {
+  .card { @apply rounded-xl border border-border bg-surface; }
+  .btn {
+    @apply inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-sm font-medium text-text transition-colors duration-150 hover:border-border-strong hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg bg-accent px-3.5 text-sm font-semibold text-on-accent transition-[filter] duration-150 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-danger {
+    @apply inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg border border-danger/40 bg-surface px-3 text-sm font-medium text-danger transition-colors duration-150 hover:bg-danger-soft disabled:opacity-50;
+  }
+  .btn-ghost {
+    @apply inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-2.5 text-sm font-medium text-muted transition-colors duration-150 hover:bg-surface-2 hover:text-text;
+  }
+  .input {
+    @apply min-h-9 w-full rounded-lg border border-border bg-surface px-3 py-1.5 text-sm text-text transition-colors duration-150 placeholder:text-muted/80 hover:border-border-strong focus:border-accent focus:outline-none aria-[invalid=true]:border-danger;
+  }
+  .label { @apply mb-1 block text-[13px] font-medium text-muted; }
+  .helper { @apply mt-1 text-xs text-muted; }
+  .field-error { @apply mt-1 text-xs font-medium text-danger; }
+  .chip { @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap; }
+  .section-title { @apply text-base font-semibold tracking-tight; }
+  /* Companion "context card": the AI-native pattern of a soft panel with an accent edge. */
+  .companion { @apply rounded-xl border border-border border-l-4 border-l-accent bg-surface; }
+  .tab {
+    @apply inline-flex min-h-10 items-center gap-1.5 border-b-2 border-transparent px-1 text-sm font-medium text-muted transition-colors duration-150 hover:text-text aria-[current=page]:border-accent aria-[current=page]:text-text;
+  }
+  .kbd { @apply rounded border border-border bg-surface-2 px-1.5 py-0.5 font-mono text-[11px] text-muted; }
+}
+
+.prose-job { overflow-wrap: anywhere; }
+.prose-job h1, .prose-job h2, .prose-job h3 { font-weight: 600; margin: 1.1em 0 0.4em; }
+.prose-job p { margin: 0.5em 0; }
+.prose-job ul { list-style: disc; padding-left: 1.4em; margin: 0.5em 0; }
+.prose-job ol { list-style: decimal; padding-left: 1.4em; }
+.prose-job a { color: var(--accent); text-decoration: underline; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

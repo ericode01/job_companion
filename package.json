@@ -1,0 +1,45 @@
+{
+  "name": "job-discovery",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.11.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n web,worker -c blue,magenta \"pnpm --filter @jd/web dev\" \"pnpm worker:watch\"",
+    "build": "pnpm --filter @jd/web build",
+    "start": "pnpm --filter @jd/web start",
+    "db:generate": "pnpm --filter @jd/core db:generate",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "seed": "tsx scripts/seed-companies.ts",
+    "crawl": "tsx scripts/crawl.ts",
+    "search": "tsx scripts/search.ts",
+    "test": "vitest run",
+    "typecheck": "tsc -p packages/core && tsc -p packages/sources && tsc -p packages/llm && tsc -p packages/research && tsc -p packages/apply && tsc -p packages/mail && tsc -p packages/digest && tsc -p apps/web && tsc -p scripts",
+    "seed:build": "tsx scripts/build-seed.ts",
+    "setup": "pnpm db:migrate && pnpm seed && pnpm crawl",
+    "worker": "tsx scripts/worker.ts",
+    "worker:watch": "tsx watch --clear-screen=false scripts/worker.ts",
+    "digest": "tsx scripts/digest.ts",
+    "refresh": "tsx scripts/refresh.ts",
+    "find-boards": "tsx scripts/find-boards.ts",
+    "serve": "concurrently -k -n web,worker -c blue,magenta \"pnpm --filter @jd/web start\" \"pnpm worker\""
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.3",
+    "concurrently": "^10.0.5",
+    "tsx": "^4.23.13",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.1"
+  },
+  "dependencies": {
+    "@jd/apply": "workspace:*",
+    "@jd/core": "workspace:*",
+    "@jd/digest": "workspace:*",
+    "@jd/llm": "workspace:*",
+    "@jd/mail": "workspace:*",
+    "@jd/research": "workspace:*",
+    "@jd/sources": "workspace:*"
+  }
+}

@@ -1,0 +1,1652 @@
+[
+  {
+    "name": "1Password",
+    "domain": "1password.com",
+    "ats": "ashby",
+    "slug": "1password"
+  },
+  {
+    "name": "1X",
+    "domain": "1x.tech",
+    "ats": "ashby",
+    "slug": "1x"
+  },
+  {
+    "name": "Ably",
+    "domain": "ably.com",
+    "ats": "greenhouse",
+    "slug": "ably30"
+  },
+  {
+    "name": "Abnormal Security",
+    "domain": "abnormalsecurity.com",
+    "ats": "greenhouse",
+    "slug": "abnormalsecurity"
+  },
+  {
+    "name": "Abridge",
+    "domain": "abridge.com",
+    "ats": "ashby",
+    "slug": "abridge"
+  },
+  {
+    "name": "Adyen",
+    "domain": "adyen.com",
+    "ats": "greenhouse",
+    "slug": "adyen"
+  },
+  {
+    "name": "Affirm",
+    "domain": "affirm.com",
+    "ats": "greenhouse",
+    "slug": "affirm"
+  },
+  {
+    "name": "Airbnb",
+    "domain": "airbnb.com",
+    "ats": "greenhouse",
+    "slug": "airbnb"
+  },
+  {
+    "name": "Airbyte",
+    "domain": "airbyte.com",
+    "ats": "ashby",
+    "slug": "airbyte"
+  },
+  {
+    "name": "Airtable",
+    "domain": "airtable.com",
+    "ats": "greenhouse",
+    "slug": "airtable"
+  },
+  {
+    "name": "Airwallex",
+    "domain": "airwallex.com",
+    "ats": "ashby",
+    "slug": "airwallex"
+  },
+  {
+    "name": "Alchemy",
+    "domain": "alchemy.com",
+    "ats": "ashby",
+    "slug": "alchemy"
+  },
+  {
+    "name": "Algolia",
+    "domain": "algolia.com",
+    "ats": "greenhouse",
+    "slug": "algolia"
+  },
+  {
+    "name": "Alloy",
+    "domain": "alloy.com",
+    "ats": "greenhouse",
+    "slug": "alloy"
+  },
+  {
+    "name": "AlphaSense",
+    "domain": "alpha-sense.com",
+    "ats": "greenhouse",
+    "slug": "alphasense"
+  },
+  {
+    "name": "Amplitude",
+    "domain": "amplitude.com",
+    "ats": "greenhouse",
+    "slug": "amplitude"
+  },
+  {
+    "name": "Anchorage Digital",
+    "domain": "anchorage.com",
+    "ats": "lever",
+    "slug": "anchorage"
+  },
+  {
+    "name": "Anduril",
+    "domain": "anduril.com",
+    "ats": "greenhouse",
+    "slug": "andurilindustries"
+  },
+  {
+    "name": "Angi",
+    "domain": "angi.com",
+    "ats": "ashby",
+    "slug": "angi"
+  },
+  {
+    "name": "Anthropic",
+    "domain": "anthropic.com",
+    "ats": "greenhouse",
+    "slug": "anthropic"
+  },
+  {
+    "name": "Applied Intuition",
+    "domain": "appliedintuition.com",
+    "ats": "ashby",
+    "slug": "applied"
+  },
+  {
+    "name": "Arcadia Science",
+    "domain": "arcadiascience.com",
+    "ats": "greenhouse",
+    "slug": "arcadiascience"
+  },
+  {
+    "name": "Asana",
+    "domain": "asana.com",
+    "ats": "greenhouse",
+    "slug": "asana"
+  },
+  {
+    "name": "Astranis",
+    "domain": "astranis.com",
+    "ats": "greenhouse",
+    "slug": "astranis"
+  },
+  {
+    "name": "Attentive",
+    "domain": "attentive.com",
+    "ats": "greenhouse",
+    "slug": "attentive"
+  },
+  {
+    "name": "Attio",
+    "domain": "attio.com",
+    "ats": "ashby",
+    "slug": "attio"
+  },
+  {
+    "name": "Axios",
+    "domain": "axios.com",
+    "ats": "greenhouse",
+    "slug": "axios"
+  },
+  {
+    "name": "Axonius",
+    "domain": "axonius.com",
+    "ats": "greenhouse",
+    "slug": "axonius"
+  },
+  {
+    "name": "Baseten",
+    "domain": "baseten.co",
+    "ats": "ashby",
+    "slug": "baseten"
+  },
+  {
+    "name": "Benchling",
+    "domain": "benchling.com",
+    "ats": "ashby",
+    "slug": "benchling"
+  },
+  {
+    "name": "Betterment",
+    "domain": "betterment.com",
+    "ats": "greenhouse",
+    "slug": "betterment"
+  },
+  {
+    "name": "Bill.com",
+    "domain": "bill.com",
+    "ats": "greenhouse",
+    "slug": "billcom"
+  },
+  {
+    "name": "Braze",
+    "domain": "braze.com",
+    "ats": "greenhouse",
+    "slug": "braze"
+  },
+  {
+    "name": "Brex",
+    "domain": "brex.com",
+    "ats": "greenhouse",
+    "slug": "brex"
+  },
+  {
+    "name": "Bridgewater",
+    "domain": "bridgewater.com",
+    "ats": "greenhouse",
+    "slug": "bridgewater89"
+  },
+  {
+    "name": "Buffer",
+    "domain": "buffer.com",
+    "ats": "ashby",
+    "slug": "buffer"
+  },
+  {
+    "name": "Business Insider",
+    "domain": "insider.com",
+    "ats": "greenhouse",
+    "slug": "insider"
+  },
+  {
+    "name": "BuzzFeed",
+    "domain": "buzzfeed.com",
+    "ats": "greenhouse",
+    "slug": "buzzfeed"
+  },
+  {
+    "name": "Calendly",
+    "domain": "calendly.com",
+    "ats": "greenhouse",
+    "slug": "calendly"
+  },
+  {
+    "name": "Carta",
+    "domain": "carta.com",
+    "ats": "greenhouse",
+    "slug": "carta"
+  },
+  {
+    "name": "Casago (formerly Vacasa)",
+    "domain": "vacasa.com",
+    "ats": "greenhouse",
+    "slug": "casago"
+  },
+  {
+    "name": "Cerebras",
+    "domain": "cerebras.net",
+    "ats": "ashby",
+    "slug": "cerebras"
+  },
+  {
+    "name": "Chainalysis",
+    "domain": "chainalysis.com",
+    "ats": "ashby",
+    "slug": "chainalysis-careers"
+  },
+  {
+    "name": "Chainguard",
+    "domain": "chainguard.dev",
+    "ats": "greenhouse",
+    "slug": "chainguard"
+  },
+  {
+    "name": "Character.AI",
+    "domain": "character.ai",
+    "ats": "ashby",
+    "slug": "character"
+  },
+  {
+    "name": "Checkr",
+    "domain": "checkr.com",
+    "ats": "greenhouse",
+    "slug": "checkr"
+  },
+  {
+    "name": "Chime",
+    "domain": "chime.com",
+    "ats": "greenhouse",
+    "slug": "chime"
+  },
+  {
+    "name": "Cityblock Health",
+    "domain": "cityblock.com",
+    "ats": "workday",
+    "slug": "cityblockhealth.wd1.myworkdayjobs.com/cityblockhealth/CityblockExternalCareerSite"
+  },
+  {
+    "name": "Clay",
+    "domain": "clay.com",
+    "ats": "ashby",
+    "slug": "claylabs"
+  },
+  {
+    "name": "Clear Street",
+    "domain": "clearstreet.io",
+    "ats": "greenhouse",
+    "slug": "clearstreet"
+  },
+  {
+    "name": "Clerk",
+    "domain": "clerk.com",
+    "ats": "ashby",
+    "slug": "clerk"
+  },
+  {
+    "name": "ClickHouse",
+    "domain": "clickhouse.com",
+    "ats": "ashby",
+    "slug": "clickhouse"
+  },
+  {
+    "name": "ClickUp",
+    "domain": "clickup.com",
+    "ats": "ashby",
+    "slug": "clickup"
+  },
+  {
+    "name": "Cloudflare",
+    "domain": "cloudflare.com",
+    "ats": "greenhouse",
+    "slug": "cloudflare"
+  },
+  {
+    "name": "Cloudinary",
+    "domain": "cloudinary.com",
+    "ats": "lever",
+    "slug": "cloudinary"
+  },
+  {
+    "name": "Cockroach Labs",
+    "domain": "cockroachlabs.com",
+    "ats": "greenhouse",
+    "slug": "cockroachlabs"
+  },
+  {
+    "name": "Cognition",
+    "domain": "cognition.ai",
+    "ats": "ashby",
+    "slug": "cognition"
+  },
+  {
+    "name": "Cohere",
+    "domain": "cohere.com",
+    "ats": "ashby",
+    "slug": "cohere"
+  },
+  {
+    "name": "Coinbase",
+    "domain": "coinbase.com",
+    "ats": "greenhouse",
+    "slug": "coinbase"
+  },
+  {
+    "name": "Column",
+    "domain": "column.com",
+    "ats": "ashby",
+    "slug": "column"
+  },
+  {
+    "name": "Confluent",
+    "domain": "confluent.io",
+    "ats": "ashby",
+    "slug": "confluent"
+  },
+  {
+    "name": "Contentful",
+    "domain": "contentful.com",
+    "ats": "greenhouse",
+    "slug": "contentful"
+  },
+  {
+    "name": "CoreWeave",
+    "domain": "coreweave.com",
+    "ats": "greenhouse",
+    "slug": "coreweave"
+  },
+  {
+    "name": "Coursera",
+    "domain": "coursera.org",
+    "ats": "greenhouse",
+    "slug": "coursera"
+  },
+  {
+    "name": "CrowdStrike",
+    "domain": "crowdstrike.com",
+    "ats": "workday",
+    "slug": "crowdstrike.wd5.myworkdayjobs.com/crowdstrike/crowdstrikecareers"
+  },
+  {
+    "name": "Culture Amp",
+    "domain": "cultureamp.com",
+    "ats": "greenhouse",
+    "slug": "cultureamp"
+  },
+  {
+    "name": "Cursor",
+    "domain": "cursor.com",
+    "ats": "ashby",
+    "slug": "cursor"
+  },
+  {
+    "name": "Databricks",
+    "domain": "databricks.com",
+    "ats": "greenhouse",
+    "slug": "databricks"
+  },
+  {
+    "name": "Datadog",
+    "domain": "datadoghq.com",
+    "ats": "greenhouse",
+    "slug": "datadog"
+  },
+  {
+    "name": "Dataminr",
+    "domain": "dataminr.com",
+    "ats": "workday",
+    "slug": "dataminr.wd12.myworkdayjobs.com/dataminr/Dataminr"
+  },
+  {
+    "name": "Decagon",
+    "domain": "decagon.ai",
+    "ats": "ashby",
+    "slug": "decagon"
+  },
+  {
+    "name": "Descript",
+    "domain": "descript.com",
+    "ats": "greenhouse",
+    "slug": "descript"
+  },
+  {
+    "name": "Discord",
+    "domain": "discord.com",
+    "ats": "greenhouse",
+    "slug": "discord"
+  },
+  {
+    "name": "DoorDash",
+    "domain": "doordash.com",
+    "ats": "greenhouse",
+    "slug": "doordashusa"
+  },
+  {
+    "name": "Doppler",
+    "domain": "doppler.com",
+    "ats": "ashby",
+    "slug": "doppler"
+  },
+  {
+    "name": "Drata",
+    "domain": "drata.com",
+    "ats": "ashby",
+    "slug": "drata"
+  },
+  {
+    "name": "Dropbox",
+    "domain": "dropbox.com",
+    "ats": "greenhouse",
+    "slug": "dropbox"
+  },
+  {
+    "name": "Duolingo",
+    "domain": "duolingo.com",
+    "ats": "greenhouse",
+    "slug": "duolingo"
+  },
+  {
+    "name": "Elastic",
+    "domain": "elastic.co",
+    "ats": "greenhouse",
+    "slug": "elastic"
+  },
+  {
+    "name": "ElevenLabs",
+    "domain": "elevenlabs.io",
+    "ats": "ashby",
+    "slug": "elevenlabs"
+  },
+  {
+    "name": "Epic Games",
+    "domain": "epicgames.com",
+    "ats": "greenhouse",
+    "slug": "epicgames"
+  },
+  {
+    "name": "Etched",
+    "domain": "etched.com",
+    "ats": "ashby",
+    "slug": "etched"
+  },
+  {
+    "name": "Everlane",
+    "domain": "everlane.com",
+    "ats": "greenhouse",
+    "slug": "everlane"
+  },
+  {
+    "name": "Expensify",
+    "domain": "expensify.com",
+    "ats": "ashby",
+    "slug": "expensify"
+  },
+  {
+    "name": "Faire",
+    "domain": "faire.com",
+    "ats": "greenhouse",
+    "slug": "faire"
+  },
+  {
+    "name": "Fastly",
+    "domain": "fastly.com",
+    "ats": "greenhouse",
+    "slug": "fastly"
+  },
+  {
+    "name": "Figma",
+    "domain": "figma.com",
+    "ats": "greenhouse",
+    "slug": "figma"
+  },
+  {
+    "name": "Figure AI",
+    "domain": "figure.ai",
+    "ats": "greenhouse",
+    "slug": "figureai"
+  },
+  {
+    "name": "Fireblocks",
+    "domain": "fireblocks.com",
+    "ats": "greenhouse",
+    "slug": "fireblocks"
+  },
+  {
+    "name": "Fireworks AI",
+    "domain": "fireworks.ai",
+    "ats": "ashby",
+    "slug": "fireworks"
+  },
+  {
+    "name": "Fivetran",
+    "domain": "fivetran.com",
+    "ats": "greenhouse",
+    "slug": "fivetran"
+  },
+  {
+    "name": "Flatiron Health",
+    "domain": "flatiron.com",
+    "ats": "greenhouse",
+    "slug": "flatironhealth"
+  },
+  {
+    "name": "Flexport",
+    "domain": "flexport.com",
+    "ats": "greenhouse",
+    "slug": "flexport"
+  },
+  {
+    "name": "Front",
+    "domain": "front.com",
+    "ats": "ashby",
+    "slug": "frontcareers"
+  },
+  {
+    "name": "Gamma",
+    "domain": "gamma.app",
+    "ats": "ashby",
+    "slug": "gamma"
+  },
+  {
+    "name": "Gemini",
+    "domain": "gemini.com",
+    "ats": "greenhouse",
+    "slug": "gemini"
+  },
+  {
+    "name": "Ginkgo Bioworks",
+    "domain": "ginkgobioworks.com",
+    "ats": "greenhouse",
+    "slug": "ginkgobioworks"
+  },
+  {
+    "name": "GitLab",
+    "domain": "gitlab.com",
+    "ats": "greenhouse",
+    "slug": "gitlab"
+  },
+  {
+    "name": "Glean",
+    "domain": "glean.com",
+    "ats": "greenhouse",
+    "slug": "gleanwork"
+  },
+  {
+    "name": "Glossier",
+    "domain": "glossier.com",
+    "ats": "greenhouse",
+    "slug": "glossier"
+  },
+  {
+    "name": "Gopuff",
+    "domain": "gopuff.com",
+    "ats": "lever",
+    "slug": "gopuff"
+  },
+  {
+    "name": "Grafana Labs",
+    "domain": "grafana.com",
+    "ats": "greenhouse",
+    "slug": "grafanalabs"
+  },
+  {
+    "name": "Greenhouse",
+    "domain": "greenhouse.io",
+    "ats": "greenhouse",
+    "slug": "greenhouse"
+  },
+  {
+    "name": "Gusto",
+    "domain": "gusto.com",
+    "ats": "greenhouse",
+    "slug": "gusto"
+  },
+  {
+    "name": "Hadrian",
+    "domain": "hadrian.co",
+    "ats": "ashby",
+    "slug": "hadrian-automation"
+  },
+  {
+    "name": "Handshake",
+    "domain": "joinhandshake.com",
+    "ats": "greenhouse",
+    "slug": "handshake"
+  },
+  {
+    "name": "Harry's",
+    "domain": "harrys.com",
+    "ats": "greenhouse",
+    "slug": "harrys"
+  },
+  {
+    "name": "Harvey",
+    "domain": "harvey.ai",
+    "ats": "ashby",
+    "slug": "harvey"
+  },
+  {
+    "name": "Headway",
+    "domain": "headway.co",
+    "ats": "ashby",
+    "slug": "headway"
+  },
+  {
+    "name": "Hebbia",
+    "domain": "hebbia.ai",
+    "ats": "ashby",
+    "slug": "hebbia-ai"
+  },
+  {
+    "name": "Hex",
+    "domain": "hex.tech",
+    "ats": "greenhouse",
+    "slug": "hextechnologies"
+  },
+  {
+    "name": "Hims & Hers",
+    "domain": "forhims.com",
+    "ats": "ashby",
+    "slug": "hims-and-hers"
+  },
+  {
+    "name": "Hinge Health",
+    "domain": "hingehealth.com",
+    "ats": "ashby",
+    "slug": "hinge-health"
+  },
+  {
+    "name": "Hootsuite",
+    "domain": "hootsuite.com",
+    "ats": "greenhouse",
+    "slug": "hootsuite"
+  },
+  {
+    "name": "Hopper",
+    "domain": "hopper.com",
+    "ats": "ashby",
+    "slug": "hopper"
+  },
+  {
+    "name": "Hudson River Trading",
+    "domain": "hudsonrivertrading.com",
+    "ats": "greenhouse",
+    "slug": "wehrtyou"
+  },
+  {
+    "name": "Huntress",
+    "domain": "huntress.com",
+    "ats": "greenhouse",
+    "slug": "huntress"
+  },
+  {
+    "name": "Ideogram",
+    "domain": "ideogram.ai",
+    "ats": "ashby",
+    "slug": "ideogram"
+  },
+  {
+    "name": "Insitro",
+    "domain": "insitro.com",
+    "ats": "ashby",
+    "slug": "insitro"
+  },
+  {
+    "name": "Instacart",
+    "domain": "instacart.com",
+    "ats": "greenhouse",
+    "slug": "instacart"
+  },
+  {
+    "name": "Instawork",
+    "domain": "instawork.com",
+    "ats": "greenhouse",
+    "slug": "instawork"
+  },
+  {
+    "name": "Intercom (Fin)",
+    "domain": "intercom.com",
+    "ats": "greenhouse",
+    "slug": "intercom"
+  },
+  {
+    "name": "Iterable",
+    "domain": "iterable.com",
+    "ats": "greenhouse",
+    "slug": "iterable"
+  },
+  {
+    "name": "Jane Street",
+    "domain": "janestreet.com",
+    "ats": "greenhouse",
+    "slug": "janestreet"
+  },
+  {
+    "name": "Jasper",
+    "domain": "jasper.ai",
+    "ats": "ashby",
+    "slug": "Jasper AI"
+  },
+  {
+    "name": "Jump Trading",
+    "domain": "jumptrading.com",
+    "ats": "greenhouse",
+    "slug": "jumptrading"
+  },
+  {
+    "name": "Justworks",
+    "domain": "justworks.com",
+    "ats": "greenhouse",
+    "slug": "justworks"
+  },
+  {
+    "name": "Kickstarter",
+    "domain": "kickstarter.com",
+    "ats": "greenhouse",
+    "slug": "kickstarter"
+  },
+  {
+    "name": "Klaviyo",
+    "domain": "klaviyo.com",
+    "ats": "greenhouse",
+    "slug": "klaviyo"
+  },
+  {
+    "name": "Komodo Health",
+    "domain": "komodohealth.com",
+    "ats": "greenhouse",
+    "slug": "komodohealth"
+  },
+  {
+    "name": "Kraken",
+    "domain": "kraken.com",
+    "ats": "ashby",
+    "slug": "kraken.com"
+  },
+  {
+    "name": "Lambda",
+    "domain": "lambdalabs.com",
+    "ats": "ashby",
+    "slug": "lambda"
+  },
+  {
+    "name": "LangChain",
+    "domain": "langchain.com",
+    "ats": "ashby",
+    "slug": "langchain"
+  },
+  {
+    "name": "Later",
+    "domain": "later.com",
+    "ats": "greenhouse",
+    "slug": "later"
+  },
+  {
+    "name": "Lattice",
+    "domain": "lattice.com",
+    "ats": "greenhouse",
+    "slug": "lattice"
+  },
+  {
+    "name": "LaunchDarkly",
+    "domain": "launchdarkly.com",
+    "ats": "greenhouse",
+    "slug": "launchdarkly"
+  },
+  {
+    "name": "Lemonade",
+    "domain": "lemonade.com",
+    "ats": "ashby",
+    "slug": "lemonade"
+  },
+  {
+    "name": "Lightmatter",
+    "domain": "lightmatter.co",
+    "ats": "greenhouse",
+    "slug": "lightmatter"
+  },
+  {
+    "name": "Linear",
+    "domain": "linear.app",
+    "ats": "ashby",
+    "slug": "linear"
+  },
+  {
+    "name": "Lithic",
+    "domain": "lithic.com",
+    "ats": "greenhouse",
+    "slug": "lithic"
+  },
+  {
+    "name": "LiveKit",
+    "domain": "livekit.io",
+    "ats": "ashby",
+    "slug": "livekit"
+  },
+  {
+    "name": "Lucid Motors",
+    "domain": "lucidmotors.com",
+    "ats": "greenhouse",
+    "slug": "lucidmotors"
+  },
+  {
+    "name": "Lyft",
+    "domain": "lyft.com",
+    "ats": "greenhouse",
+    "slug": "lyft"
+  },
+  {
+    "name": "Mapbox",
+    "domain": "mapbox.com",
+    "ats": "ashby",
+    "slug": "mapbox"
+  },
+  {
+    "name": "Marqeta",
+    "domain": "marqeta.com",
+    "ats": "ashby",
+    "slug": "marqeta-inc"
+  },
+  {
+    "name": "Materialize",
+    "domain": "materialize.com",
+    "ats": "ashby",
+    "slug": "materialize"
+  },
+  {
+    "name": "Mercury",
+    "domain": "mercury.com",
+    "ats": "greenhouse",
+    "slug": "mercury"
+  },
+  {
+    "name": "Midjourney",
+    "domain": "midjourney.com",
+    "ats": "ashby",
+    "slug": "midjourney"
+  },
+  {
+    "name": "Mintlify",
+    "domain": "mintlify.com",
+    "ats": "ashby",
+    "slug": "mintlify"
+  },
+  {
+    "name": "Mirage (formerly Captions)",
+    "domain": "captions.ai",
+    "ats": "ashby",
+    "slug": "mirage"
+  },
+  {
+    "name": "Miro",
+    "domain": "miro.com",
+    "ats": "ashby",
+    "slug": "miro"
+  },
+  {
+    "name": "Mistral AI",
+    "domain": "mistral.ai",
+    "ats": "ashby",
+    "slug": "mistral.ai"
+  },
+  {
+    "name": "Mixpanel",
+    "domain": "mixpanel.com",
+    "ats": "greenhouse",
+    "slug": "mixpanel"
+  },
+  {
+    "name": "Modal",
+    "domain": "modal.com",
+    "ats": "ashby",
+    "slug": "modal"
+  },
+  {
+    "name": "Modern Treasury",
+    "domain": "moderntreasury.com",
+    "ats": "ashby",
+    "slug": "moderntreasury"
+  },
+  {
+    "name": "Monday.com",
+    "domain": "monday.com",
+    "ats": "ashby",
+    "slug": "monday.com"
+  },
+  {
+    "name": "MongoDB",
+    "domain": "mongodb.com",
+    "ats": "greenhouse",
+    "slug": "mongodb"
+  },
+  {
+    "name": "Monzo",
+    "domain": "monzo.com",
+    "ats": "greenhouse",
+    "slug": "monzo"
+  },
+  {
+    "name": "MotherDuck",
+    "domain": "motherduck.com",
+    "ats": "ashby",
+    "slug": "motherduck"
+  },
+  {
+    "name": "Movable Ink",
+    "domain": "movableink.com",
+    "ats": "greenhouse",
+    "slug": "movableink"
+  },
+  {
+    "name": "Mux",
+    "domain": "mux.com",
+    "ats": "ashby",
+    "slug": "mux"
+  },
+  {
+    "name": "Netlify",
+    "domain": "netlify.com",
+    "ats": "greenhouse",
+    "slug": "netlify"
+  },
+  {
+    "name": "Newsela",
+    "domain": "newsela.com",
+    "ats": "greenhouse",
+    "slug": "newsela"
+  },
+  {
+    "name": "Nextdoor",
+    "domain": "nextdoor.com",
+    "ats": "greenhouse",
+    "slug": "nextdoor"
+  },
+  {
+    "name": "Notion",
+    "domain": "notion.so",
+    "ats": "ashby",
+    "slug": "notion"
+  },
+  {
+    "name": "Nubank",
+    "domain": "nubank.com.br",
+    "ats": "ashby",
+    "slug": "nubank"
+  },
+  {
+    "name": "Nuro",
+    "domain": "nuro.ai",
+    "ats": "greenhouse",
+    "slug": "nuro"
+  },
+  {
+    "name": "Octopus Energy",
+    "domain": "octopusenergy.com",
+    "ats": "lever",
+    "slug": "octoenergy"
+  },
+  {
+    "name": "Okta",
+    "domain": "okta.com",
+    "ats": "greenhouse",
+    "slug": "okta"
+  },
+  {
+    "name": "Olo",
+    "domain": "olo.com",
+    "ats": "lever",
+    "slug": "olo"
+  },
+  {
+    "name": "OpenAI",
+    "domain": "openai.com",
+    "ats": "ashby",
+    "slug": "openai"
+  },
+  {
+    "name": "Oscar Health",
+    "domain": "hioscar.com",
+    "ats": "greenhouse",
+    "slug": "oscar"
+  },
+  {
+    "name": "Outschool",
+    "domain": "outschool.com",
+    "ats": "greenhouse",
+    "slug": "outschool"
+  },
+  {
+    "name": "Oyster",
+    "domain": "oysterhr.com",
+    "ats": "ashby",
+    "slug": "oyster"
+  },
+  {
+    "name": "PagerDuty",
+    "domain": "pagerduty.com",
+    "ats": "greenhouse",
+    "slug": "pagerduty"
+  },
+  {
+    "name": "Palantir",
+    "domain": "palantir.com",
+    "ats": "lever",
+    "slug": "palantir"
+  },
+  {
+    "name": "Palmetto",
+    "domain": "palmetto.com",
+    "ats": "greenhouse",
+    "slug": "palmetto"
+  },
+  {
+    "name": "Patreon",
+    "domain": "patreon.com",
+    "ats": "ashby",
+    "slug": "patreon"
+  },
+  {
+    "name": "Pave",
+    "domain": "pave.com",
+    "ats": "greenhouse",
+    "slug": "paveakatroveinformationtechnologies"
+  },
+  {
+    "name": "Paxos",
+    "domain": "paxos.com",
+    "ats": "ashby",
+    "slug": "paxos"
+  },
+  {
+    "name": "Payoneer",
+    "domain": "payoneer.com",
+    "ats": "greenhouse",
+    "slug": "payoneer"
+  },
+  {
+    "name": "Peloton",
+    "domain": "onepeloton.com",
+    "ats": "greenhouse",
+    "slug": "peloton"
+  },
+  {
+    "name": "Perplexity",
+    "domain": "perplexity.ai",
+    "ats": "ashby",
+    "slug": "perplexity"
+  },
+  {
+    "name": "Physical Intelligence",
+    "domain": "physicalintelligence.company",
+    "ats": "ashby",
+    "slug": "physicalintelligence"
+  },
+  {
+    "name": "Pilot",
+    "domain": "pilot.com",
+    "ats": "greenhouse",
+    "slug": "pilothq"
+  },
+  {
+    "name": "Pinecone",
+    "domain": "pinecone.io",
+    "ats": "ashby",
+    "slug": "pinecone"
+  },
+  {
+    "name": "Pinterest",
+    "domain": "pinterest.com",
+    "ats": "greenhouse",
+    "slug": "pinterest"
+  },
+  {
+    "name": "Plaid",
+    "domain": "plaid.com",
+    "ats": "ashby",
+    "slug": "plaid"
+  },
+  {
+    "name": "PlanetScale",
+    "domain": "planetscale.com",
+    "ats": "greenhouse",
+    "slug": "planetscale"
+  },
+  {
+    "name": "Point72",
+    "domain": "point72.com",
+    "ats": "greenhouse",
+    "slug": "point72"
+  },
+  {
+    "name": "PostHog",
+    "domain": "posthog.com",
+    "ats": "ashby",
+    "slug": "posthog"
+  },
+  {
+    "name": "Pure Storage (Everpure)",
+    "domain": "purestorage.com",
+    "ats": "greenhouse",
+    "slug": "purestorage"
+  },
+  {
+    "name": "Ramp",
+    "domain": "ramp.com",
+    "ats": "ashby",
+    "slug": "ramp"
+  },
+  {
+    "name": "Recursion",
+    "domain": "recursion.com",
+    "ats": "greenhouse",
+    "slug": "recursionpharmaceuticals"
+  },
+  {
+    "name": "Reddit",
+    "domain": "reddit.com",
+    "ats": "greenhouse",
+    "slug": "reddit"
+  },
+  {
+    "name": "Relativity Space",
+    "domain": "relativityspace.com",
+    "ats": "greenhouse",
+    "slug": "relativity"
+  },
+  {
+    "name": "Remote",
+    "domain": "remote.com",
+    "ats": "greenhouse",
+    "slug": "remotecom"
+  },
+  {
+    "name": "Render",
+    "domain": "render.com",
+    "ats": "ashby",
+    "slug": "render"
+  },
+  {
+    "name": "Rent the Runway",
+    "domain": "renttherunway.com",
+    "ats": "greenhouse",
+    "slug": "renttherunway"
+  },
+  {
+    "name": "Replit",
+    "domain": "replit.com",
+    "ats": "ashby",
+    "slug": "replit"
+  },
+  {
+    "name": "Riot Games",
+    "domain": "riotgames.com",
+    "ats": "greenhouse",
+    "slug": "riotgames"
+  },
+  {
+    "name": "Ro",
+    "domain": "ro.co",
+    "ats": "lever",
+    "slug": "ro"
+  },
+  {
+    "name": "Robinhood",
+    "domain": "robinhood.com",
+    "ats": "greenhouse",
+    "slug": "robinhood"
+  },
+  {
+    "name": "Roblox",
+    "domain": "roblox.com",
+    "ats": "greenhouse",
+    "slug": "roblox"
+  },
+  {
+    "name": "Rubrik",
+    "domain": "rubrik.com",
+    "ats": "greenhouse",
+    "slug": "rubrik"
+  },
+  {
+    "name": "SambaNova",
+    "domain": "sambanova.ai",
+    "ats": "greenhouse",
+    "slug": "sambanovasystems"
+  },
+  {
+    "name": "Samsara",
+    "domain": "samsara.com",
+    "ats": "greenhouse",
+    "slug": "samsara"
+  },
+  {
+    "name": "Sanity",
+    "domain": "sanity.io",
+    "ats": "ashby",
+    "slug": "sanity"
+  },
+  {
+    "name": "Scale AI",
+    "domain": "scale.com",
+    "ats": "greenhouse",
+    "slug": "scaleai"
+  },
+  {
+    "name": "Scopely",
+    "domain": "scopely.com",
+    "ats": "greenhouse",
+    "slug": "scopely"
+  },
+  {
+    "name": "SeatGeek",
+    "domain": "seatgeek.com",
+    "ats": "greenhouse",
+    "slug": "seatgeek"
+  },
+  {
+    "name": "Semgrep",
+    "domain": "semgrep.dev",
+    "ats": "ashby",
+    "slug": "semgrep"
+  },
+  {
+    "name": "Sendbird",
+    "domain": "sendbird.com",
+    "ats": "greenhouse",
+    "slug": "sendbird"
+  },
+  {
+    "name": "Sentry",
+    "domain": "sentry.io",
+    "ats": "ashby",
+    "slug": "sentry"
+  },
+  {
+    "name": "Sezzle",
+    "domain": "sezzle.com",
+    "ats": "greenhouse",
+    "slug": "sezzle"
+  },
+  {
+    "name": "Shield AI",
+    "domain": "shield.ai",
+    "ats": "lever",
+    "slug": "shieldai"
+  },
+  {
+    "name": "Sierra",
+    "domain": "sierra.ai",
+    "ats": "ashby",
+    "slug": "sierra"
+  },
+  {
+    "name": "Sigma Computing",
+    "domain": "sigmacomputing.com",
+    "ats": "greenhouse",
+    "slug": "sigmacomputing"
+  },
+  {
+    "name": "Skydio",
+    "domain": "skydio.com",
+    "ats": "ashby",
+    "slug": "skydio"
+  },
+  {
+    "name": "Snowflake",
+    "domain": "snowflake.com",
+    "ats": "ashby",
+    "slug": "snowflake"
+  },
+  {
+    "name": "Snyk",
+    "domain": "snyk.io",
+    "ats": "ashby",
+    "slug": "snyk"
+  },
+  {
+    "name": "SoFi",
+    "domain": "sofi.com",
+    "ats": "greenhouse",
+    "slug": "sofi"
+  },
+  {
+    "name": "Socket",
+    "domain": "socket.dev",
+    "ats": "greenhouse",
+    "slug": "socket"
+  },
+  {
+    "name": "Spotify",
+    "domain": "spotify.com",
+    "ats": "lever",
+    "slug": "spotify"
+  },
+  {
+    "name": "Sprinklr",
+    "domain": "sprinklr.com",
+    "ats": "workday",
+    "slug": "sprinklr.wd1.myworkdayjobs.com/sprinklr/careers"
+  },
+  {
+    "name": "Sprout Social",
+    "domain": "sproutsocial.com",
+    "ats": "greenhouse",
+    "slug": "sproutsocial"
+  },
+  {
+    "name": "Squarespace",
+    "domain": "squarespace.com",
+    "ats": "greenhouse",
+    "slug": "squarespace"
+  },
+  {
+    "name": "Stability AI",
+    "domain": "stability.ai",
+    "ats": "greenhouse",
+    "slug": "stabilityai"
+  },
+  {
+    "name": "Starburst",
+    "domain": "starburst.io",
+    "ats": "greenhouse",
+    "slug": "starburst"
+  },
+  {
+    "name": "Stream",
+    "domain": "getstream.io",
+    "ats": "ashby",
+    "slug": "stream"
+  },
+  {
+    "name": "Stripe",
+    "domain": "stripe.com",
+    "ats": "greenhouse",
+    "slug": "stripe"
+  },
+  {
+    "name": "Stytch",
+    "domain": "stytch.com",
+    "ats": "ashby",
+    "slug": "stytch"
+  },
+  {
+    "name": "Substack",
+    "domain": "substack.com",
+    "ats": "ashby",
+    "slug": "substack"
+  },
+  {
+    "name": "Suno",
+    "domain": "suno.com",
+    "ats": "ashby",
+    "slug": "suno"
+  },
+  {
+    "name": "Supabase",
+    "domain": "supabase.com",
+    "ats": "ashby",
+    "slug": "supabase"
+  },
+  {
+    "name": "Sweetgreen",
+    "domain": "sweetgreen.com",
+    "ats": "greenhouse",
+    "slug": "sweetgreen"
+  },
+  {
+    "name": "Tailscale",
+    "domain": "tailscale.com",
+    "ats": "greenhouse",
+    "slug": "tailscale"
+  },
+  {
+    "name": "Talkspace",
+    "domain": "talkspace.com",
+    "ats": "greenhouse",
+    "slug": "talkspace"
+  },
+  {
+    "name": "Taskrabbit",
+    "domain": "taskrabbit.com",
+    "ats": "greenhouse",
+    "slug": "taskrabbit"
+  },
+  {
+    "name": "Teleport",
+    "domain": "goteleport.com",
+    "ats": "ashby",
+    "slug": "goteleport"
+  },
+  {
+    "name": "Temporal",
+    "domain": "temporal.io",
+    "ats": "ashby",
+    "slug": "temporal"
+  },
+  {
+    "name": "Tenstorrent",
+    "domain": "tenstorrent.com",
+    "ats": "greenhouse",
+    "slug": "tenstorrent"
+  },
+  {
+    "name": "The Athletic",
+    "domain": "theathletic.com",
+    "ats": "lever",
+    "slug": "theathletic"
+  },
+  {
+    "name": "The New York Times",
+    "domain": "nytimes.com",
+    "ats": "greenhouse",
+    "slug": "thenewyorktimes"
+  },
+  {
+    "name": "Thumbtack",
+    "domain": "thumbtack.com",
+    "ats": "ashby",
+    "slug": "thumbtack"
+  },
+  {
+    "name": "Toast",
+    "domain": "toasttab.com",
+    "ats": "greenhouse",
+    "slug": "toast"
+  },
+  {
+    "name": "Together AI",
+    "domain": "together.ai",
+    "ats": "greenhouse",
+    "slug": "togetherai"
+  },
+  {
+    "name": "Twilio",
+    "domain": "twilio.com",
+    "ats": "greenhouse",
+    "slug": "twilio"
+  },
+  {
+    "name": "Twitch",
+    "domain": "twitch.tv",
+    "ats": "greenhouse",
+    "slug": "twitch"
+  },
+  {
+    "name": "Uniswap Labs",
+    "domain": "uniswap.org",
+    "ats": "ashby",
+    "slug": "uniswap"
+  },
+  {
+    "name": "Upstart",
+    "domain": "upstart.com",
+    "ats": "greenhouse",
+    "slug": "upstart"
+  },
+  {
+    "name": "Vanta",
+    "domain": "vanta.com",
+    "ats": "ashby",
+    "slug": "vanta"
+  },
+  {
+    "name": "Vercel",
+    "domain": "vercel.com",
+    "ats": "greenhouse",
+    "slug": "vercel"
+  },
+  {
+    "name": "Verkada",
+    "domain": "verkada.com",
+    "ats": "greenhouse",
+    "slug": "verkada"
+  },
+  {
+    "name": "Via",
+    "domain": "ridewithvia.com",
+    "ats": "greenhouse",
+    "slug": "via"
+  },
+  {
+    "name": "Vox Media",
+    "domain": "voxmedia.com",
+    "ats": "greenhouse",
+    "slug": "voxmedia"
+  },
+  {
+    "name": "Warp",
+    "domain": "warp.dev",
+    "ats": "greenhouse",
+    "slug": "warp"
+  },
+  {
+    "name": "Watershed",
+    "domain": "watershed.com",
+    "ats": "greenhouse",
+    "slug": "watershed"
+  },
+  {
+    "name": "Waymo",
+    "domain": "waymo.com",
+    "ats": "greenhouse",
+    "slug": "waymo"
+  },
+  {
+    "name": "Wayve",
+    "domain": "wayve.ai",
+    "ats": "greenhouse",
+    "slug": "wayve"
+  },
+  {
+    "name": "Wealthfront",
+    "domain": "wealthfront.com",
+    "ats": "lever",
+    "slug": "wealthfront"
+  },
+  {
+    "name": "Webflow",
+    "domain": "webflow.com",
+    "ats": "greenhouse",
+    "slug": "webflow"
+  },
+  {
+    "name": "Wise",
+    "domain": "wise.com",
+    "ats": "greenhouse",
+    "slug": "wise"
+  },
+  {
+    "name": "Wiz",
+    "domain": "wiz.io",
+    "ats": "greenhouse",
+    "slug": "wizinc"
+  },
+  {
+    "name": "WorkOS",
+    "domain": "workos.com",
+    "ats": "ashby",
+    "slug": "workos"
+  },
+  {
+    "name": "Writer",
+    "domain": "writer.com",
+    "ats": "ashby",
+    "slug": "writer"
+  },
+  {
+    "name": "Yext",
+    "domain": "yext.com",
+    "ats": "greenhouse",
+    "slug": "yext"
+  },
+  {
+    "name": "Zapier",
+    "domain": "zapier.com",
+    "ats": "ashby",
+    "slug": "zapier"
+  },
+  {
+    "name": "Zendesk",
+    "domain": "zendesk.com",
+    "ats": "workday",
+    "slug": "zendesk.wd1.myworkdayjobs.com/zendesk/zendesk"
+  },
+  {
+    "name": "Zillow",
+    "domain": "zillow.com",
+    "ats": "workday",
+    "slug": "zillow.wd5.myworkdayjobs.com/zillow/Zillow_Group_External"
+  },
+  {
+    "name": "Zipline",
+    "domain": "flyzipline.com",
+    "ats": "greenhouse",
+    "slug": "flyzipline"
+  },
+  {
+    "name": "Zocdoc",
+    "domain": "zocdoc.com",
+    "ats": "greenhouse",
+    "slug": "zocdoc"
+  },
+  {
+    "name": "Zoox",
+    "domain": "zoox.com",
+    "ats": "lever",
+    "slug": "zoox"
+  },
+  {
+    "name": "Zscaler",
+    "domain": "zscaler.com",
+    "ats": "greenhouse",
+    "slug": "zscaler"
+  },
+  {
+    "name": "iCapital",
+    "domain": "icapitalnetwork.com",
+    "ats": "greenhouse",
+    "slug": "icapitalnetwork"
+  }
+]

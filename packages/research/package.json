@@ -1,0 +1,19 @@
+{
+  "name": "@jd/research",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.126.0",
+    "@jd/core": "workspace:*",
+    "@jd/llm": "workspace:*",
+    "@jd/sources": "workspace:*",
+    "drizzle-orm": "0.45.2",
+    "pdf-lib": "^1.17.1",
+    "unpdf": "^1.8.1",
+    "zod": "^4.6.5"
+  }
+}

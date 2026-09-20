@@ -1,0 +1,16 @@
+node_modules
+.next
+data/*
+!data/.gitkeep
+.env*.local
+*.tsbuildinfo
+apps/extension/dist
+apps/extension/dist-harness
+.next-test
+
+# macOS
+.DS_Store
+# scratch space for throwaway scripts
+scripts/tmp
+# per-machine Claude Code settings (launch.json is shared)
+.claude/settings.local.json

@@ -15,7 +15,7 @@ const linkCls =
   "relative inline-flex min-h-10 min-w-10 items-center justify-center gap-1.5 rounded-lg px-2.5 text-sm font-medium text-muted transition-colors hover:bg-surface-2 hover:text-text aria-[current=page]:bg-accent-soft aria-[current=page]:text-accent";
 
 function Dot({ tone }: { tone: "good" | "warn" }) {
-  return <span aria-hidden className={`absolute top-2 right-2 size-2 rounded-full ring-2 ring-surface lg:static lg:ring-0 ${tone === "good" ? "bg-good" : "bg-warn"}`} />;
+  return <span aria-hidden className={`absolute top-2 right-2 size-2 rounded-full ring-2 ring-surface xl:static xl:ring-0 ${tone === "good" ? "bg-good" : "bg-warn"}`} />;
 }
 
 /** The places that belong to you, not to one search: pipeline, profile, answers, mailbox, extension. */
@@ -26,7 +26,7 @@ export function AppNav({ inbox, actions, extensionConnected, mailbox }: { inbox:
     <nav aria-label="Your applications and tools" className="hidden items-center gap-0.5 sm:flex">
       <Link href="/pipeline" aria-current={current("/pipeline")} className={linkCls}>
         <KanbanSquare aria-hidden className="size-4" />
-        <span className="hidden lg:inline">Pipeline</span>
+        <span className="hidden xl:inline">Pipeline</span>
         {actions > 0 && (
           <span className="chip min-w-5 justify-center bg-warn-soft px-1.5 text-warn tabular-nums">
             <BellRing aria-hidden className="size-3" />
@@ -37,11 +37,11 @@ export function AppNav({ inbox, actions, extensionConnected, mailbox }: { inbox:
       </Link>
       <Link href="/profile" aria-current={current("/profile")} className={linkCls}>
         <UserRound aria-hidden className="size-4" />
-        <span className="hidden lg:inline">Profile</span>
+        <span className="hidden xl:inline">Profile</span>
       </Link>
       <Link href="/answers" aria-current={current("/answers")} className={linkCls}>
         <MessageSquareText aria-hidden className="size-4" />
-        <span className="hidden lg:inline">Answers</span>
+        <span className="hidden xl:inline">Answers</span>
         {inbox > 0 && (
           <span className="chip min-w-5 justify-center bg-warn-soft px-1.5 text-warn tabular-nums">
             {inbox}
@@ -51,7 +51,7 @@ export function AppNav({ inbox, actions, extensionConnected, mailbox }: { inbox:
       </Link>
       <Link href="/mailbox" aria-current={current("/mailbox")} className={linkCls}>
         <Mails aria-hidden className="size-4" />
-        <span className="hidden lg:inline">Mailbox</span>
+        <span className="hidden xl:inline">Mailbox</span>
         {mailbox.review > 0 ? (
           <span className="chip min-w-5 justify-center bg-warn-soft px-1.5 text-warn tabular-nums">
             {mailbox.review}
@@ -64,7 +64,7 @@ export function AppNav({ inbox, actions, extensionConnected, mailbox }: { inbox:
       </Link>
       <Link href="/extension" aria-current={current("/extension")} className={linkCls}>
         <Puzzle aria-hidden className="size-4" />
-        <span className="hidden lg:inline">Extension</span>
+        <span className="hidden xl:inline">Extension</span>
         <Dot tone={extensionConnected ? "good" : "warn"} />
         <span className="sr-only">{extensionConnected ? "(connected)" : "(not set up)"}</span>
       </Link>

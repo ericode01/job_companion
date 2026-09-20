@@ -10,7 +10,7 @@ import { ApplicationPanel } from "@/components/ApplicationPanel";
 import { ReviewList } from "@/components/ReviewList";
 import { RoundChips } from "@/components/RoundTracker";
 import { FitBadge } from "@/components/Status";
-import { ConfirmDialog, EmptyState, Skeleton } from "@/components/ui";
+import { ConfirmDialog, EmptyState, type Feedback, FeedbackBar, Skeleton } from "@/components/ui";
 import { formatComp, timeAgo } from "@/lib/format";
 import { shortDate } from "@/lib/mail-labels";
 import { groupColumn } from "@/lib/pipeline-groups";
@@ -66,6 +66,7 @@ export function PipelineBoard() {
   const [rejectedOpen, setRejectedOpen] = useState(false);
   const [scope, setScope] = useState<number | null>(null);
   const [q, setQ] = useState("");
+  const [feedback, setFeedback] = useState<Feedback | null>(null);
 
   const router = useRouter();
   const load = useCallback(async () => {
@@ -140,6 +141,7 @@ export function PipelineBoard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scope, text, data]);
 
+  /** Moves the card at once, then tells you if the server disagreed — never a silent revert. */
   async function move(card: PipelineCard, status: ApplicationStatus | null) {
     setData((d) =>
       d && {
@@ -148,8 +150,50 @@ export function PipelineBoard() {
       },
     );
     setAnnounce(status ? `${card.title} moved to ${STATUS_LABELS[status]}` : `${card.title} removed from pipeline`);
-    await fetch(`/api/pipeline/${card.id}`, status ? { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ status }) } : { method: "DELETE" });
+    const res = await fetch(
+      `/api/pipeline/${card.id}`,
+      status ? { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ status }) } : { method: "DELETE" },
+    ).catch(() => null);
+    if (!res?.ok) {
+      const said = res ? ((await res.json().catch(() => ({}))) as { error?: string }).error : "You may be offline.";
+      setFeedback({
+        tone: "error",
+        text: `Couldn't ${status ? `move “${card.title}” to ${STATUS_LABELS[status]}` : `remove “${card.title}”`}. ${said ?? ""}`.trim(),
+        action: { label: "Retry", run: () => move(card, status) },
+      });
+    }
     changed();
+  }
+
+  /** Clearing an action is reversible: the same email can be reopened. */
+  async function markDone(emailId: number) {
+    const row = data?.actions.find((a) => a.emailId === emailId);
+    setData((d) => d && { ...d, actions: d.actions.filter((a) => a.emailId !== emailId) });
+    try {
+      await emailAction(emailId, { type: "done", done: true });
+      changed();
+      setFeedback({
+        text: row ? `Marked done: ${row.company}.` : "Marked done.",
+        action: {
+          label: "Undo",
+          run: async () => {
+            try {
+              await emailAction(emailId, { type: "done", done: false });
+              changed();
+            } catch (e) {
+              setFeedback({ tone: "error", text: e instanceof Error ? e.message : "Couldn't undo that." });
+            }
+          },
+        },
+      });
+    } catch (e) {
+      void load();
+      setFeedback({
+        tone: "error",
+        text: e instanceof Error ? e.message : "Couldn't mark that done.",
+        action: { label: "Retry", run: () => markDone(emailId) },
+      });
+    }
   }
 
   const toggleRejected = () => {
@@ -217,18 +261,9 @@ export function PipelineBoard() {
         </div>
       )}
 
-      <ActionStrip
-        actions={actions}
-        onOpen={openPanel}
-        onDone={async (emailId) => {
-          setData((d) => d && { ...d, actions: d.actions.filter((a) => a.emailId !== emailId) });
-          setAnnounce("Marked done");
-          await emailAction(emailId, { type: "done", done: true });
-          changed();
-        }}
-      />
+      <ActionStrip actions={actions} onOpen={openPanel} onDone={(emailId) => void markDone(emailId)} />
       <ReviewList items={review} applications={appOptions} onChanged={changed} />
-      <EmailChanges changes={changes} onOpen={openPanel} onUndone={changed} />
+      <EmailChanges changes={changes} onOpen={openPanel} onUndone={changed} onFeedback={setFeedback} />
 
       <ConfirmDialog
         open={confirmRemove !== null}
@@ -354,6 +389,7 @@ export function PipelineBoard() {
       )}
 
       <ApplicationPanel appId={panel} applications={appOptions} onClose={() => openPanel(null)} onChanged={changed} />
+      <FeedbackBar feedback={feedback} onDismiss={() => setFeedback(null)} />
     </div>
   );
 }
@@ -466,9 +502,18 @@ function CompactCard({ card: c, onOpen, onDragStart, onDragEnd }: { card: Pipeli
 }
 
 /** What your email changed this week, each undoable. */
-function EmailChanges({ changes, onOpen, onUndone }: { changes: ChangeJson[]; onOpen: (appId: number) => void; onUndone: () => void }) {
+function EmailChanges({
+  changes,
+  onOpen,
+  onUndone,
+  onFeedback,
+}: {
+  changes: ChangeJson[];
+  onOpen: (appId: number) => void;
+  onUndone: () => void;
+  onFeedback: (f: Feedback) => void;
+}) {
   const [open, setOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   if (!changes.length) return null;
   const counts = new Map<string, number>();
   for (const c of changes) {
@@ -503,13 +548,15 @@ function EmailChanges({ changes, onOpen, onUndone }: { changes: ChangeJson[]; on
                 type="button"
                 className="btn-ghost min-h-8 text-xs"
                 onClick={async () => {
-                  setError(null);
                   const res = await fetch(`/api/pipeline/${c.applicationId}/undo`, {
                     method: "POST",
                     headers: { "content-type": "application/json" },
                     body: JSON.stringify({ eventId: c.eventId }),
-                  });
-                  if (!res.ok) setError(((await res.json().catch(() => ({}))) as { error?: string }).error ?? "Couldn't undo that.");
+                  }).catch(() => null);
+                  if (!res?.ok) {
+                    const said = res ? ((await res.json().catch(() => ({}))) as { error?: string }).error : "You may be offline.";
+                    onFeedback({ tone: "error", text: said ?? "Couldn't undo that." });
+                  }
                   onUndone();
                 }}
               >
@@ -518,11 +565,6 @@ function EmailChanges({ changes, onOpen, onUndone }: { changes: ChangeJson[]; on
             </li>
           ))}
         </ul>
-      )}
-      {error && (
-        <p role="alert" className="mt-1 text-xs font-medium text-danger">
-          {error}
-        </p>
       )}
     </section>
   );

@@ -284,6 +284,42 @@ describe("processing emails into the pipeline", () => {
     expect(app(unknown.created!.id)).toMatchObject({ searchId, jobTitle: "Staff Engineer" });
   });
 
+  it("keeps different roles at the same company apart", () => {
+    const product = newApp({ companyName: "Initrode", jobTitle: "Staff Software Engineer, Product Engineering", source: "manual", status: "applied" });
+    // A confirmation naming a different role doesn't join that card; it waits to be checked.
+    const other = mail.processEmail(
+      conn,
+      email({ fromAddress: "no-reply@initrode.com", threadId: "t-initrode-ai" }),
+      cls({ kind: "application_received", companyName: "Initrode", jobTitle: "Staff Software Engineer, AI Platform" }),
+      "llm",
+      mail.trackedApplications(userId),
+    );
+    expect(other.row?.reviewState).toBe("needs_review");
+    expect(other.row?.applicationId).toBeNull();
+    expect(app(product.id).confirmedAt).toBeNull();
+
+    // The same role, worded a little differently, still links on its own.
+    const same = mail.processEmail(
+      conn,
+      email({ fromAddress: "no-reply@initrode.com", threadId: "t-initrode-product" }),
+      cls({ kind: "application_received", companyName: "Initrode", jobTitle: "Product Engineering, Staff Software Engineer" }),
+      "llm",
+      mail.trackedApplications(userId),
+    );
+    expect(same.row?.applicationId).toBe(product.id);
+    expect(app(product.id).confirmedAt).toBeTruthy();
+
+    // And a reply in a thread that's already linked never re-asks.
+    const reply = mail.processEmail(
+      conn,
+      email({ fromAddress: "recruiter@initrode.com", threadId: "t-initrode-product" }),
+      cls({ kind: "interview_request", round: "recruiter_call", companyName: "Initrode", jobTitle: null }),
+      "llm",
+      mail.trackedApplications(userId),
+    );
+    expect(reply.row?.applicationId).toBe(product.id);
+  });
+
   it("asks when it isn't sure, and acts once the person confirms", () => {
     const b1 = newApp({ companyName: "Hooli", jobTitle: "Backend Engineer", source: "manual", status: "applied" });
     newApp({ companyName: "Hooli", jobTitle: "Frontend Engineer", source: "manual", status: "applied" });

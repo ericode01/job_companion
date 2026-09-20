@@ -489,8 +489,10 @@ function ConnectionCard({ conn: c, google, onChanged }: { conn: Conn; google: bo
 
   const call = async (url: string, init: RequestInit) => {
     setError(null);
-    const res = await fetch(url, init);
-    if (!res.ok) setError(((await res.json().catch(() => ({}))) as { error?: string }).error ?? "That didn't work.");
+    // A dropped connection has to say so too, or the button just looks broken.
+    const res = await fetch(url, init).catch(() => null);
+    if (!res) setError("Couldn't reach the server. Check your connection and try again.");
+    else if (!res.ok) setError(((await res.json().catch(() => ({}))) as { error?: string }).error ?? "That didn't work.");
     onChanged();
   };
   const patch = (body: Record<string, unknown>) => call(`/api/mail/connections/${c.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });

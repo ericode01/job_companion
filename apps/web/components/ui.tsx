@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Inbox, LoaderCircle } from "lucide-react";
+import { AlertTriangle, Inbox, LoaderCircle, X } from "lucide-react";
 import { useEffect, useRef } from "react";
 
 export function Spinner({ label, className = "" }: { label?: string; className?: string }) {
@@ -51,6 +51,58 @@ export function Alert({ tone = "warn", children }: { tone?: "warn" | "danger"; c
     <div role="alert" className={`flex items-start gap-2 rounded-lg px-3 py-2 text-sm ${cls}`}>
       <AlertTriangle aria-hidden className="mt-0.5 size-4 shrink-0" />
       <div>{children}</div>
+    </div>
+  );
+}
+
+/** What just happened, and the way back from it. */
+export interface Feedback {
+  text: string;
+  /** Errors stay until dismissed or replaced; anything else fades after a few seconds. */
+  tone?: "info" | "error";
+  action?: { label: string; run: () => void | Promise<void> };
+}
+
+const FEEDBACK_MS = 8000;
+
+/**
+ * One place for "that worked, undo?" and "that didn't work, retry?". A failed action must never
+ * pass silently: the board would quietly revert and look like it ignored you.
+ */
+export function FeedbackBar({ feedback, onDismiss }: { feedback: Feedback | null; onDismiss: () => void }) {
+  const error = feedback?.tone === "error";
+  useEffect(() => {
+    if (!feedback || error) return;
+    const t = setTimeout(onDismiss, FEEDBACK_MS);
+    return () => clearTimeout(t);
+  }, [feedback, error, onDismiss]);
+  if (!feedback) return null;
+  return (
+    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex justify-center px-4 pb-[calc(env(safe-area-inset-bottom,0px)+1rem)]">
+      <div
+        role={error ? "alert" : "status"}
+        className={`pointer-events-auto flex w-[min(34rem,100%)] items-center gap-2 rounded-xl border px-3 py-2 text-sm shadow-lg ${
+          error ? "border-danger/40 bg-danger-soft text-danger" : "border-border bg-surface text-text"
+        }`}
+      >
+        {error && <AlertTriangle aria-hidden className="size-4 shrink-0" />}
+        <p className="min-w-0 flex-1">{feedback.text}</p>
+        {feedback.action && (
+          <button
+            type="button"
+            className="btn min-h-9 shrink-0"
+            onClick={() => {
+              void feedback.action!.run();
+              onDismiss();
+            }}
+          >
+            {feedback.action.label}
+          </button>
+        )}
+        <button type="button" className="btn-ghost size-9 shrink-0 px-0" onClick={onDismiss} aria-label="Dismiss">
+          <X aria-hidden className="size-4" />
+        </button>
+      </div>
     </div>
   );
 }

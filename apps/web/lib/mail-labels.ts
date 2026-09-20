@@ -80,3 +80,28 @@ export function replyLink(e: { fromAddress: string | null; subject: string | nul
   const subject = e.subject ? (/^re:/i.test(e.subject) ? e.subject : `Re: ${e.subject}`) : "";
   return `mailto:${e.fromAddress}?subject=${encodeURIComponent(subject)}`;
 }
+
+/**
+ * Does an email's role name mean the same job as the card's? Loosely mirrors the linker's title
+ * comparison (packages/mail/src/link.ts) for display only: when it says no, the timeline shows the
+ * email's own role, so a wrong merge is visible instead of hidden.
+ */
+const ROLE_NOISE = /\b(the|a|an|of|and|for|to|in|at|on|with|role|position|remote|hybrid|sr|senior|jr|junior|staff|principal|lead)\b/g;
+export function sameRole(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !b) return true;
+  const words = (s: string) =>
+    new Set(
+      s
+        .toLowerCase()
+        .replace(/[^a-z0-9 ]+/g, " ")
+        .replace(ROLE_NOISE, " ")
+        .split(/\s+/)
+        .filter(Boolean),
+    );
+  const x = words(a);
+  const y = words(b);
+  if (!x.size || !y.size) return true;
+  let both = 0;
+  for (const w of x) if (y.has(w)) both++;
+  return both / (x.size + y.size - both) >= 0.55;
+}

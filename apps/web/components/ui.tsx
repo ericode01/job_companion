@@ -78,7 +78,7 @@ export function FeedbackBar({ feedback, onDismiss }: { feedback: Feedback | null
   }, [feedback, error, onDismiss]);
   if (!feedback) return null;
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex justify-center px-4 pb-[calc(env(safe-area-inset-bottom,0px)+1rem)]">
+    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex justify-center px-4 pb-[calc(env(safe-area-inset-bottom,0px)+1rem)] max-sm:pb-[calc(env(safe-area-inset-bottom,0px)+4.5rem)]">
       <div
         role={error ? "alert" : "status"}
         className={`pointer-events-auto flex w-[min(34rem,100%)] items-center gap-2 rounded-xl border px-3 py-2 text-sm shadow-lg ${

@@ -2,6 +2,7 @@ import { getExtensionState, pendingInboxCount } from "@jd/apply";
 import { activeConnections, openActions, reviewQueue } from "@jd/mail";
 import { Suspense } from "react";
 import { AppNav } from "@/components/AppNav";
+import { BottomNav } from "@/components/BottomNav";
 import { Brand } from "@/components/Brand";
 import { DashboardSwitcher } from "@/components/DashboardSwitcher";
 import { UserMenu } from "@/components/UserMenu";
@@ -36,13 +37,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </Suspense>
           <div className="ml-auto flex items-center gap-1 sm:gap-2">
             <AppNav inbox={inbox} actions={actions} extensionConnected={connected} mailbox={mailbox} />
-            <UserMenu name={user.name} email={user.email} isAdmin={user.role === "admin"} inbox={inbox} actions={actions} mailbox={mailbox} />
+            <UserMenu name={user.name} email={user.email} isAdmin={user.role === "admin"} />
           </div>
         </div>
       </header>
-      <main id="main" tabIndex={-1} className="mx-auto max-w-6xl px-4 py-6 focus:outline-none">
+      <main id="main" tabIndex={-1} className="mx-auto max-w-6xl px-4 pt-6 pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))] focus:outline-none sm:pb-6">
         {children}
       </main>
+      <BottomNav searchId={user.lastSearchId ?? dashboards.at(-1)?.id ?? null} actions={actions} inbox={inbox} mailbox={mailbox} />
     </>
   );
 }

@@ -29,6 +29,7 @@ const COLUMNS: { key: string; title: string; statuses: ApplicationStatus[] }[] =
 /** Per-browser conveniences: they may be blocked, and the page must work without them. */
 const REJECTED_KEY = "jc:rejected-open";
 const SCOPE_KEY = "jc:pipeline-search";
+const STAGE_KEY = "jc:pipeline-stage";
 function read(key: string): string | null {
   try {
     return localStorage.getItem(key);
@@ -56,6 +57,19 @@ function syncUrl(params: { scope: number | null; q: string; app: number | null }
 
 const hay = (...parts: (string | null | undefined)[]) => parts.filter(Boolean).join(" ").toLowerCase();
 
+/** Six columns don't fit a phone: below md the board shows the stage you pick, one at a time. */
+function useIsPhone(): boolean {
+  const [phone, setPhone] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    const sync = () => setPhone(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+  return phone;
+}
+
 export function PipelineBoard() {
   const [data, setData] = useState<PipelineData | null>(null);
   const [dragging, setDragging] = useState<number | null>(null);
@@ -67,6 +81,8 @@ export function PipelineBoard() {
   const [scope, setScope] = useState<number | null>(null);
   const [q, setQ] = useState("");
   const [feedback, setFeedback] = useState<Feedback | null>(null);
+  const [stage, setStage] = useState<string | null>(null);
+  const phone = useIsPhone();
 
   const router = useRouter();
   const load = useCallback(async () => {
@@ -90,6 +106,7 @@ export function PipelineBoard() {
     const chosen = Number(searchParam || (fromUrl ? "" : read(SCOPE_KEY)) || Number.NaN);
     if (Number.isInteger(chosen) && chosen > 0) setScope(chosen);
     setQ(url.searchParams.get("q") ?? "");
+    setStage(read(STAGE_KEY));
   }, [load]);
 
   const openPanel = (id: number | null) => {
@@ -101,6 +118,12 @@ export function PipelineBoard() {
     setScope(next);
     write(SCOPE_KEY, next === null ? "all" : String(next));
     syncUrl({ scope: next, q, app: panel });
+  };
+
+  const chooseStage = (key: string, count: number) => {
+    setStage(key);
+    write(STAGE_KEY, key);
+    setAnnounce(`Showing ${COLUMNS.find((c) => c.key === key)?.title}, ${count} ${count === 1 ? "application" : "applications"}`);
   };
 
   const changeQuery = (next: string) => {
@@ -224,6 +247,9 @@ export function PipelineBoard() {
     );
   }
 
+  // On a phone: the stage you last looked at, else the first one that holds anything.
+  const countIn = (col: (typeof COLUMNS)[number]) => cards.filter((c) => col.statuses.includes(c.status)).length;
+  const current = (stage && COLUMNS.some((c) => c.key === stage) ? stage : null) ?? (COLUMNS.find((c) => countIn(c) > 0) ?? COLUMNS[2]!).key;
   const rejectedCount = cards.filter((c) => c.status === "rejected" || c.status === "withdrawn").length;
   const collapsed = !rejectedOpen && rejectedCount > 0;
   const filtered = scope !== null || text.length > 0;
@@ -307,15 +333,21 @@ export function PipelineBoard() {
         )
       ) : (
         <>
-          <PipelineSummary cards={cards} />
+          <PipelineSummary cards={cards} phone={phone} />
+          {phone && <StagePicker cards={cards} stage={current} onChoose={chooseStage} />}
           <div
-            className={`grid gap-3 pb-2 md:grid-cols-3 ${collapsed ? "xl:grid-cols-[repeat(5,minmax(0,1fr))_3.25rem]" : "xl:grid-cols-6"}`}
+            // `relative`: the sr-only spans inside cards are absolutely positioned, and without a
+            // containing block here they escape the scroller and widen the whole page.
+            className={`relative gap-3 pb-2 ${
+              phone ? "block" : `flex snap-x overflow-x-auto xl:grid xl:overflow-visible ${collapsed ? "xl:grid-cols-[repeat(5,minmax(0,1fr))_3.25rem]" : "xl:grid-cols-6"}`
+            }`}
           >
-            {COLUMNS.map((col) => {
+            {(phone ? COLUMNS.filter((c) => c.key === current) : COLUMNS).map((col) => {
               const colCards = cards.filter((c) => col.statuses.includes(c.status));
               const isRejected = col.key === "rejected";
               const dropProps = { onDragOver: dragOver(col.key), onDragLeave: () => setOver(null), onDrop: drop(col) };
-              if (isRejected && collapsed) {
+              // The rail is a desktop affordance: on a phone the picker already hides the column.
+              if (isRejected && collapsed && !phone) {
                 return (
                   <button
                     key={col.key}
@@ -324,7 +356,7 @@ export function PipelineBoard() {
                     onClick={toggleRejected}
                     aria-expanded={false}
                     aria-label={`Rejected: ${colCards.length}. Show them`}
-                    className={`flex min-h-11 items-center justify-between gap-2 rounded-xl border px-3 text-xs font-semibold tracking-wide text-muted uppercase transition-colors duration-150 hover:border-border-strong hover:text-text md:col-span-3 xl:col-span-1 xl:min-h-40 xl:flex-col xl:justify-start xl:px-0 xl:py-3 ${
+                    className={`flex min-h-11 w-14 shrink-0 snap-start flex-col items-center justify-start gap-2 rounded-xl border px-0 py-3 text-xs font-semibold tracking-wide text-muted uppercase transition-colors duration-150 hover:border-border-strong hover:text-text xl:w-auto xl:min-h-40 ${
                       over === col.key ? "border-accent bg-accent-soft" : "border-border bg-surface-2/60"
                     }`}
                   >
@@ -342,7 +374,9 @@ export function PipelineBoard() {
                   key={col.key}
                   {...dropProps}
                   // min-w-0: a truncated line in a compact card must not stretch the column.
-                  className={`min-h-40 min-w-0 rounded-xl border p-2 transition-colors duration-150 ${over === col.key ? "border-accent bg-accent-soft" : "border-border bg-surface-2/60"}`}
+                  className={`min-h-40 min-w-0 rounded-xl border p-2 transition-colors duration-150 ${phone ? "" : "w-72 shrink-0 snap-start xl:w-auto"} ${
+                    over === col.key ? "border-accent bg-accent-soft" : "border-border bg-surface-2/60"
+                  }`}
                 >
                   <h2 className="mb-2 flex items-center justify-between px-1 text-xs font-semibold tracking-wide text-muted uppercase">
                     {col.title}
@@ -357,8 +391,10 @@ export function PipelineBoard() {
                   </h2>
                   {groups.map((g) => (
                     <div key={g.bucket} className="space-y-2">
+                      {/* Pinned only where the page itself scrolls: between md and xl the row scrolls
+                          sideways, and a sticky header there would sit on top of the cards. */}
                       {g.label && (
-                        <h3 className="sticky top-16 z-10 -mx-1 rounded-md bg-surface-2/95 px-1.5 py-1 text-[11px] font-medium text-muted backdrop-blur">
+                        <h3 className="sticky top-16 z-10 -mx-1 rounded-md bg-surface-2/95 px-1.5 py-1 text-[11px] font-medium text-muted backdrop-blur md:static xl:sticky xl:top-16">
                           {g.label} <span className="tabular-nums">({g.cards.length})</span>
                         </h3>
                       )}
@@ -390,6 +426,31 @@ export function PipelineBoard() {
 
       <ApplicationPanel appId={panel} applications={appOptions} onClose={() => openPanel(null)} onChanged={changed} />
       <FeedbackBar feedback={feedback} onDismiss={() => setFeedback(null)} />
+    </div>
+  );
+}
+
+/** Which stage a phone shows. Six columns stacked is ten screens of scrolling; this is one. */
+function StagePicker({ cards, stage, onChoose }: { cards: PipelineCard[]; stage: string; onChoose: (key: string, count: number) => void }) {
+  return (
+    <div role="group" aria-label="Pipeline stage" className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-1">
+      {COLUMNS.map((col) => {
+        const n = cards.filter((c) => col.statuses.includes(c.status)).length;
+        const active = col.key === stage;
+        return (
+          <button
+            key={col.key}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onChoose(col.key, n)}
+            className={`flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg border px-3 text-sm transition-colors ${
+              active ? "border-accent bg-accent-soft font-semibold text-accent" : "border-border bg-surface text-muted"
+            }`}
+          >
+            {col.title} <span className="tabular-nums">{n}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -571,7 +632,7 @@ function EmailChanges({
 }
 
 /** From search to offer at a glance: how many made it to each stage. */
-function PipelineSummary({ cards }: { cards: PipelineCard[] }) {
+function PipelineSummary({ cards, phone }: { cards: PipelineCard[]; phone: boolean }) {
   const reached = (statuses: ApplicationStatus[]) => cards.filter((c) => statuses.includes(c.status)).length;
   const stages = [
     { label: "Saved", n: reached(["saved"]) },
@@ -592,7 +653,9 @@ function PipelineSummary({ cards }: { cards: PipelineCard[] }) {
           </li>
         ))}
       </ol>
-      <p className="text-xs text-muted">Drag cards between columns, or use the menu on each card. Click a title for its emails.</p>
+      <p className="text-xs text-muted">
+        {phone ? "Use the menu on each card to move it. Tap a title for its emails." : "Drag cards between columns, or use the menu on each card. Click a title for its emails."}
+      </p>
     </div>
   );
 }

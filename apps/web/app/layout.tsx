@@ -8,7 +8,7 @@ export const metadata: Metadata = {
   title: { default: "Job Companion", template: "%s · Job Companion" },
   description: "Your AI companion from job search to offer",
 };
-export const viewport: Viewport = { width: "device-width", initialScale: 1 };
+export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

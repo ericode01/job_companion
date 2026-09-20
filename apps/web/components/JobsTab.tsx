@@ -1,7 +1,7 @@
 "use client";
 
 import type { SearchResult } from "@jd/sources";
-import { ExternalLink, Globe2, RefreshCw, Sparkles } from "lucide-react";
+import { ExternalLink, Globe2, RefreshCw, SlidersHorizontal, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -54,6 +54,7 @@ export function JobsTab({ dashboardId }: { dashboardId: number }) {
 
   const [data, setData] = useState<Data | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const since = useRef<string | null>(null);
 
   const load = useCallback(async () => {
@@ -107,6 +108,7 @@ export function JobsTab({ dashboardId }: { dashboardId: number }) {
   const newCount = data.results.filter((r) => r.isNew).length;
   const counts: Record<Where, number> = { all: data.results.length, local: localCount, remote: data.results.length - localCount };
   const filtered = where !== "all" || payOnly || newOnly || minFit > 0;
+  const activeFilters = (where !== "all" ? 1 : 0) + (payOnly ? 1 : 0) + (newOnly ? 1 : 0) + (minFit > 0 ? 1 : 0) + (sort !== "newest" ? 1 : 0);
 
   return (
     <div className="space-y-4">
@@ -122,7 +124,19 @@ export function JobsTab({ dashboardId }: { dashboardId: number }) {
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-2 text-sm">
+      {/* On a phone the controls pushed the first job off the screen, so they fold away. */}
+      <button
+        type="button"
+        className="btn min-h-11 sm:hidden"
+        aria-expanded={filtersOpen}
+        aria-controls="job-filters"
+        onClick={() => setFiltersOpen((o) => !o)}
+      >
+        <SlidersHorizontal aria-hidden className="size-4" /> Filters
+        {activeFilters > 0 && <span className="chip bg-accent-soft text-accent tabular-nums">{activeFilters}</span>}
+      </button>
+
+      <div id="job-filters" className={`${filtersOpen ? "flex" : "hidden"} flex-wrap items-center gap-2 text-sm sm:flex`}>
         <div role="group" aria-label="Location" className="inline-flex rounded-lg border border-border bg-surface p-0.5">
           {(Object.keys(WHERE) as Where[]).map((w) => (
             <button

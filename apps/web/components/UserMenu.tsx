@@ -1,12 +1,11 @@
 "use client";
 
-import { KanbanSquare, LogOut, Mails, MessageSquareText, Puzzle, Settings, ShieldCheck, UserRound } from "lucide-react";
-import type { MailboxBadge } from "@/components/AppNav";
+import { LogOut, Puzzle, Settings, ShieldCheck, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 
-export function UserMenu({ name, email, isAdmin, inbox = 0, actions = 0, mailbox }: { name: string; email: string; isAdmin: boolean; inbox?: number; actions?: number; mailbox?: MailboxBadge }) {
+export function UserMenu({ name, email, isAdmin }: { name: string; email: string; isAdmin: boolean }) {
   const router = useRouter();
   const menuId = useId();
   const [open, setOpen] = useState(false);
@@ -59,26 +58,10 @@ export function UserMenu({ name, email, isAdmin, inbox = 0, actions = 0, mailbox
             <p className="truncate text-sm font-semibold">{name}</p>
             <p className="truncate text-xs text-muted">{email}</p>
           </div>
-          {/* On phones the header has no room for these, so they live here. */}
+          {/* Pipeline, Answers and Mailbox are in the bottom bar on phones; these are the rest. */}
           <div className="border-t border-border py-1 sm:hidden">
-            <Link href="/pipeline" className="flex min-h-11 items-center gap-2 rounded-lg px-2.5 text-sm hover:bg-surface-2 focus:bg-surface-2 focus:outline-none" onClick={() => setOpen(false)}>
-              <KanbanSquare aria-hidden className="size-4 text-muted" /> Pipeline
-              {actions > 0 && <span className="chip ml-auto bg-warn-soft text-warn tabular-nums">{actions} to reply</span>}
-            </Link>
             <Link href="/profile" className="flex min-h-11 items-center gap-2 rounded-lg px-2.5 text-sm hover:bg-surface-2 focus:bg-surface-2 focus:outline-none" onClick={() => setOpen(false)}>
               <UserRound aria-hidden className="size-4 text-muted" /> Profile
-            </Link>
-            <Link href="/answers" className="flex min-h-11 items-center gap-2 rounded-lg px-2.5 text-sm hover:bg-surface-2 focus:bg-surface-2 focus:outline-none" onClick={() => setOpen(false)}>
-              <MessageSquareText aria-hidden className="size-4 text-muted" /> Answers
-              {inbox > 0 && <span className="chip ml-auto bg-warn-soft text-warn tabular-nums">{inbox} to answer</span>}
-            </Link>
-            <Link href="/mailbox" className="flex min-h-11 items-center gap-2 rounded-lg px-2.5 text-sm hover:bg-surface-2 focus:bg-surface-2 focus:outline-none" onClick={() => setOpen(false)}>
-              <Mails aria-hidden className="size-4 text-muted" /> Mailbox
-              {mailbox && mailbox.review > 0 ? (
-                <span className="chip ml-auto bg-warn-soft text-warn tabular-nums">{mailbox.review} to check</span>
-              ) : mailbox?.state === "attention" ? (
-                <span className="chip ml-auto bg-warn-soft text-warn">Reconnect</span>
-              ) : null}
             </Link>
             <Link href="/extension" className="flex min-h-11 items-center gap-2 rounded-lg px-2.5 text-sm hover:bg-surface-2 focus:bg-surface-2 focus:outline-none" onClick={() => setOpen(false)}>
               <Puzzle aria-hidden className="size-4 text-muted" /> Chrome extension

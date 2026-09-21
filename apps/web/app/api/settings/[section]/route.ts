@@ -7,7 +7,7 @@ type Ctx = { params: Promise<{ section: string }> };
 export function GET(req: Request, { params }: Ctx) {
   return withUser(req, async (user) => {
     const { section } = await params;
-    return isUserSettingsSection(section) ? json(getUserSettings(user.id, section)) : notFound();
+    return isUserSettingsSection(section) ? json(await getUserSettings(user.id, section)) : notFound();
   });
 }
 
@@ -15,6 +15,6 @@ export function PUT(req: Request, { params }: Ctx) {
   return withUser(req, async (user) => {
     const { section } = await params;
     if (!isUserSettingsSection(section)) return notFound();
-    return json(saveUserSettings(user.id, section, await readJson(req)));
+    return json(await saveUserSettings(user.id, section, await readJson(req)));
   });
 }

@@ -11,7 +11,7 @@ export function POST(req: Request, { params }: Ctx) {
     if (!hasApiKey()) return NextResponse.json({ error: "AI is turned off on this server (no API key)." }, { status: 422 });
     const id = Number((await params).id);
     // Refreshing an existing profile re-researches; retrying a failed first attempt reuses gathered notes.
-    enqueueCompanyResearch(id, false, getCompanyProfile(id) !== null, user.id);
+    await enqueueCompanyResearch(id, false, await getCompanyProfile(id) !== null, user.id);
     return json({ ok: true });
   });
 }

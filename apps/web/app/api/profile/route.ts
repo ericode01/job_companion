@@ -21,7 +21,7 @@ const Profile = z
 const EMPTY = { name: null, email: null, phone: null, location: null, links: {}, about: null, writingSample: null };
 
 export function GET(req: Request) {
-  return withUser(req, (user) => json(getProfile(user.id) ?? EMPTY));
+  return withUser(req, async (user) => json(await getProfile(user.id) ?? EMPTY));
 }
 
 export function PUT(req: Request) {
@@ -30,6 +30,6 @@ export function PUT(req: Request) {
     const parsed = Profile.parse(raw);
     // Only fields that were sent are written, so onboarding can save "about you" alone.
     const values = Object.fromEntries(Object.entries(parsed).filter(([k]) => k in raw));
-    return json(saveProfile(user.id, values));
+    return json(await saveProfile(user.id, values));
   });
 }

@@ -6,10 +6,10 @@ type Ctx = { params: Promise<{ jobId: string }> };
 
 export function PUT(req: Request, { params }: Ctx) {
   return withUser(req, async (user) => {
-    const app = getApplicationByJob(user.id, Number((await params).jobId));
+    const app = await getApplicationByJob(user.id, Number((await params).jobId));
     if (!app) return notFound();
     const { text } = z.object({ text: z.string().trim().min(50, "The cover letter is too short.").max(10000) }).parse(await readJson(req));
-    updateCoverLetter(user.id, app.id, text);
+    await updateCoverLetter(user.id, app.id, text);
     return json({ ok: true });
   });
 }

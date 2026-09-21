@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import { getDb } from "./db";
+import { getDb, one } from "./db";
 import { loadEnv } from "./paths";
 import { settings, userSetting } from "./db/schema";
 import { ATS_TYPES } from "./types";
@@ -135,24 +135,24 @@ export function isUserSettingsSection(s: string): s is UserSettingsSection {
   return s in UserSettingsSchemas;
 }
 
-export function getUserSettings<S extends UserSettingsSection>(userId: number, section: S): UserSettingsOf<S> {
-  const row = getDb()
-    .select()
-    .from(userSetting)
-    .where(and(eq(userSetting.userId, userId), eq(userSetting.key, section)))
-    .get();
+export async function getUserSettings<S extends UserSettingsSection>(userId: number, section: S): Promise<UserSettingsOf<S>> {
+  const row = await one(
+    getDb()
+      .select()
+      .from(userSetting)
+      .where(and(eq(userSetting.userId, userId), eq(userSetting.key, section))),
+  );
   const schema = UserSettingsSchemas[section];
   const parsed = schema.safeParse(row?.value ?? {});
   return (parsed.success ? parsed.data : schema.parse({})) as UserSettingsOf<S>;
 }
 
-export function saveUserSettings<S extends UserSettingsSection>(userId: number, section: S, value: unknown): UserSettingsOf<S> {
+export async function saveUserSettings<S extends UserSettingsSection>(userId: number, section: S, value: unknown): Promise<UserSettingsOf<S>> {
   const data = UserSettingsSchemas[section].parse(value) as UserSettingsOf<S>;
-  getDb()
+  await getDb()
     .insert(userSetting)
     .values({ userId, key: section, value: data })
-    .onConflictDoUpdate({ target: [userSetting.userId, userSetting.key], set: { value: data, updatedAt: new Date() } })
-    .run();
+    .onConflictDoUpdate({ target: [userSetting.userId, userSetting.key], set: { value: data, updatedAt: new Date() } });
   return data;
 }
 
@@ -167,25 +167,24 @@ export function isSettingsSection(s: string): s is SettingsSection {
 }
 
 /** Stored values merged over defaults. Invalid stored values fall back to defaults. */
-export function getSettings<S extends SettingsSection>(section: S): SettingsOf<S> {
-  const row = getDb().select().from(settings).where(eq(settings.key, section)).get();
+export async function getSettings<S extends SettingsSection>(section: S): Promise<SettingsOf<S>> {
+  const row = await one(getDb().select().from(settings).where(eq(settings.key, section)));
   const schema = SettingsSchemas[section];
   const parsed = schema.safeParse(row?.value ?? {});
   return (parsed.success ? parsed.data : schema.parse({})) as SettingsOf<S>;
 }
 
-export function getAllSettings(): AllSettings {
-  return Object.fromEntries(SETTINGS_SECTIONS.map((s) => [s, getSettings(s)])) as AllSettings;
+export async function getAllSettings(): Promise<AllSettings> {
+  return Object.fromEntries(await Promise.all(SETTINGS_SECTIONS.map(async (s) => [s, await getSettings(s)] as const))) as AllSettings;
 }
 
 /** Validates the full section and stores it. Throws ZodError on invalid input. */
-export function saveSettings<S extends SettingsSection>(section: S, value: unknown): SettingsOf<S> {
+export async function saveSettings<S extends SettingsSection>(section: S, value: unknown): Promise<SettingsOf<S>> {
   const data = SettingsSchemas[section].parse(value) as SettingsOf<S>;
-  getDb()
+  await getDb()
     .insert(settings)
     .values({ key: section, value: data })
-    .onConflictDoUpdate({ target: settings.key, set: { value: data, updatedAt: new Date() } })
-    .run();
+    .onConflictDoUpdate({ target: settings.key, set: { value: data, updatedAt: new Date() } });
   return data;
 }
 
@@ -194,10 +193,10 @@ export function saveSettings<S extends SettingsSection>(section: S, value: unkno
  * spelling ("anthropic:claude-haiku-4-5"), once. Both forms work, so this only makes the stored
  * row say out loud where its calls go. Called after migrations, beside reconcileAtsSettings.
  */
-export function reconcileAiSettings(): void {
-  const stored = getDb().select().from(settings).where(eq(settings.key, "ai")).get();
+export async function reconcileAiSettings(): Promise<void> {
+  const stored = await one(getDb().select().from(settings).where(eq(settings.key, "ai")));
   if (!stored) return; // no row: the defaults are already qualified
-  const current = getSettings("ai");
+  const current = await getSettings("ai");
   const entries = Object.entries(current.models);
   if (entries.every(([, v]) => v.includes(":"))) return;
 
@@ -214,20 +213,20 @@ export function reconcileAiSettings(): void {
       return [purpose, fallback];
     }),
   );
-  saveSettings("ai", { ...current, models });
+  await saveSettings("ai", { ...current, models });
 }
 
 /**
  * Switches on ATS types added since this install was last run, once each. Recording them in
  * `knownAts` means turning one back off sticks. Called after migrations.
  */
-export function reconcileAtsSettings(): void {
-  const stored = getDb().select().from(settings).where(eq(settings.key, "sources")).get();
-  const current = getSettings("sources");
+export async function reconcileAtsSettings(): Promise<void> {
+  const stored = await one(getDb().select().from(settings).where(eq(settings.key, "sources")));
+  const current = await getSettings("sources");
   // No stored row: the defaults already enable everything, so just record what's been offered.
   const added = stored ? ATS_TYPES.filter((t) => !current.knownAts.includes(t)) : [];
   if (stored && added.length === 0) return;
-  saveSettings("sources", {
+  await saveSettings("sources", {
     ...current,
     enabledAts: [...new Set([...current.enabledAts, ...added])],
     knownAts: [...ATS_TYPES],

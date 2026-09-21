@@ -12,14 +12,14 @@ const Patch = z.object({
 
 export function PUT(req: Request, { params }: Ctx) {
   return withUser(req, async (user) => {
-    const row = updateAnswer(user.id, Number((await params).id), Patch.parse(await readJson(req)));
+    const row = await updateAnswer(user.id, Number((await params).id), Patch.parse(await readJson(req)));
     return row ? json(row) : notFound();
   });
 }
 
 export function DELETE(req: Request, { params }: Ctx) {
   return withUser(req, async (user) => {
-    deleteAnswer(user.id, Number((await params).id));
+    await deleteAnswer(user.id, Number((await params).id));
     return json({ ok: true });
   });
 }

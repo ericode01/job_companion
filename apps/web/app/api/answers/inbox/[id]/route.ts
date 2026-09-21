@@ -14,10 +14,10 @@ export function POST(req: Request, { params }: Ctx) {
     const id = Number((await params).id);
     const body = Body.parse(await readJson(req));
     if ("status" in body) {
-      setInboxStatus(user.id, id, body.status);
+      await setInboxStatus(user.id, id, body.status);
       return json({ ok: true });
     }
-    const saved = answerInboxItem(user.id, id, body.answer, body.scope);
+    const saved = await answerInboxItem(user.id, id, body.answer, body.scope);
     return saved ? json(saved) : notFound();
   });
 }

@@ -12,7 +12,7 @@ const Body = z.object({
 export function POST(req: Request) {
   return withUser(req, async (user) => {
     const { query, includeRemoteUS } = Body.parse(await readJson(req));
-    const defaults = getUserSettings(user.id, "search");
+    const defaults = await getUserSettings(user.id, "search");
     return json(
       await parseSearchQuery(query, {
         includeRemoteUS: includeRemoteUS ?? defaults.includeRemoteUS,

@@ -1,61 +1,19 @@
 {
   "version": "7",
-  "dialect": "sqlite",
+  "dialect": "postgresql",
   "entries": [
     {
       "idx": 0,
-      "version": "6",
-      "when": 1789590940513,
-      "tag": "0000_misty_adam_warlock",
+      "version": "7",
+      "when": 1789966672226,
+      "tag": "0000_baseline",
       "breakpoints": true
     },
     {
       "idx": 1,
-      "version": "6",
-      "when": 1789592951001,
-      "tag": "0001_gigantic_meltdown",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "6",
-      "when": 1789596519474,
-      "tag": "0002_motionless_hydra",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "6",
-      "when": 1789598304905,
-      "tag": "0003_deep_sphinx",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "6",
-      "when": 1789675324650,
-      "tag": "0004_lying_wrecker",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "6",
-      "when": 1789706657913,
-      "tag": "0005_oval_songbird",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "6",
-      "when": 1789774442121,
-      "tag": "0006_brainy_sage",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "6",
-      "when": 1789845478273,
-      "tag": "0007_exotic_red_skull",
+      "version": "7",
+      "when": 1789969376581,
+      "tag": "0001_task_live_key",
       "breakpoints": true
     }
   ]

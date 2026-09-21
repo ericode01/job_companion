@@ -1,5 +1,5 @@
 import { decryptSecret, getProfile, getSettings, getUser, loadEnv } from "@jd/core";
-import { getDb, schema } from "@jd/core/db";
+import { getDb, one, schema } from "@jd/core/db";
 import { BudgetExceededError } from "@jd/llm";
 import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import { type ApplicationHint, classifyEmail } from "./classify";
@@ -27,7 +27,7 @@ const TIME_BUDGET_MS = 7 * 60_000;
 const PARALLEL = 4;
 
 function sourceFor(conn: Connection, secret: string, companyDomains: string[]): MailSource {
-  const save = (cursor: Connection["cursor"]) => updateConnection(conn.id, { cursor });
+  const save = async (cursor: Connection["cursor"]) => updateConnection(conn.id, { cursor });
   if (conn.provider === "gmail") return gmailSource(conn, secret, { companyDomains, save });
   if (conn.imapHost === FAKE_HOST) {
     if (!fakeMailAllowed()) throw new Error("The test mailbox is only available in development.");
@@ -36,19 +36,19 @@ function sourceFor(conn: Connection, secret: string, companyDomains: string[]): 
   return imapSource(conn, secret, { save });
 }
 
-function prefilterContext(conn: Connection, companyDomains: string[]): PrefilterContext {
+async function prefilterContext(conn: Connection, companyDomains: string[]): Promise<PrefilterContext> {
   loadEnv();
   const db = getDb();
   const trackedThreads = new Set(
-    db
-      .selectDistinct({ t: schema.emailMessage.threadId })
-      .from(schema.emailMessage)
-      .where(and(eq(schema.emailMessage.userId, conn.userId), isNotNull(schema.emailMessage.applicationId), isNotNull(schema.emailMessage.threadId)))
-      .all()
-      .map((r) => r.t!),
+    (
+      await db
+        .selectDistinct({ t: schema.emailMessage.threadId })
+        .from(schema.emailMessage)
+        .where(and(eq(schema.emailMessage.userId, conn.userId), isNotNull(schema.emailMessage.applicationId), isNotNull(schema.emailMessage.threadId)))
+    ).map((r) => r.t!),
   );
-  const user = getUser(conn.userId);
-  const profile = getProfile(conn.userId);
+  const user = await getUser(conn.userId);
+  const profile = await getProfile(conn.userId);
   const selfAddresses = new Set([conn.address, user?.email, profile?.email].filter(Boolean).map((a) => a!.toLowerCase()));
   const digestFrom = new Set([process.env.DIGEST_FROM, process.env.SMTP_USER].filter(Boolean).map((a) => a!.toLowerCase().replace(/^.*<([^>]+)>.*$/, "$1")));
   return { companyDomains: new Set(companyDomains), trackedThreads, selfAddresses, digestFrom };
@@ -61,37 +61,36 @@ function prefilterContext(conn: Connection, companyDomains: string[]): Prefilter
  */
 export async function syncConnection(connectionId: number): Promise<SyncSummary | null> {
   const db = getDb();
-  const conn = db.select().from(schema.mailboxConnection).where(eq(schema.mailboxConnection.id, connectionId)).get();
-  if (!conn || !conn.secret || conn.status === "paused" || !getSettings("mailSync").enabled) return null;
+  const conn = await one(db.select().from(schema.mailboxConnection).where(eq(schema.mailboxConnection.id, connectionId)));
+  if (!conn || !conn.secret || conn.status === "paused" || !(await getSettings("mailSync")).enabled) return null;
 
   const summary: SyncSummary = { listed: 0, candidates: 0, processed: 0, jobEmails: 0, created: 0, moved: 0, remaining: 0 };
   const started = Date.now();
   let source: MailSource | null = null;
   try {
-    const apps = trackedApplications(conn.userId);
+    const apps = await trackedApplications(conn.userId);
     const companyDomains = [...new Set(apps.map((a) => a.companyDomain).filter((d): d is string => Boolean(d)))];
     source = sourceFor(conn, decryptSecret(conn.secret), companyDomains);
-    updateConnection(conn.id, { progress: { done: 0, total: 0 }, lastError: null, status: "active" });
+    await updateConnection(conn.id, { progress: { done: 0, total: 0 }, lastError: null, status: "active" });
 
     const headers = (await source.listHeaders()).sort((a, b) => a.receivedAt.getTime() - b.receivedAt.getTime());
     summary.listed = headers.length;
     const seen = new Set<string>();
     for (let i = 0; i < headers.length; i += 500) {
       const ids = headers.slice(i, i + 500).map((h) => h.providerId);
-      for (const r of db
+      for (const r of await db
         .select({ p: schema.emailMessage.providerId })
         .from(schema.emailMessage)
-        .where(and(eq(schema.emailMessage.connectionId, conn.id), inArray(schema.emailMessage.providerId, ids)))
-        .all())
+        .where(and(eq(schema.emailMessage.connectionId, conn.id), inArray(schema.emailMessage.providerId, ids))))
         seen.add(r.p);
     }
-    const ctx = prefilterContext(conn, companyDomains);
-    const timeZone = getUser(conn.userId)?.timezone ?? "UTC";
+    const ctx = await prefilterContext(conn, companyDomains);
+    const timeZone = (await getUser(conn.userId))?.timezone ?? "UTC";
     const candidates = headers.filter((h) => !seen.has(h.providerId) && prefilter(h, ctx).keep);
     summary.candidates = candidates.length;
-    const cap = getSettings("mailSync").maxClassifyPerRun;
+    const cap = (await getSettings("mailSync")).maxClassifyPerRun;
     const batch = candidates.slice(0, cap);
-    updateConnection(conn.id, { progress: { done: 0, total: batch.length } });
+    await updateConnection(conn.id, { progress: { done: 0, total: batch.length } });
 
     const hints = (): ApplicationHint[] =>
       apps.filter((a) => a.status !== "saved").slice(-80).map((a) => ({ id: a.id, company: a.company, title: a.title, status: a.status }));
@@ -113,19 +112,19 @@ export async function syncConnection(connectionId: number): Promise<SyncSummary 
       for (const c of classified) {
         summary.processed++;
         if (!c) continue;
-        const out = processEmail(conn, c.email, c.result, c.by, apps);
+        const out = await processEmail(conn, c.email, c.result, c.by, apps);
         if (out.row) summary.jobEmails++;
         if (out.created) summary.created++;
         if (out.moved) summary.moved++;
       }
-      updateConnection(conn.id, { progress: { done: Math.min(i + PARALLEL, batch.length), total: batch.length } });
+      await updateConnection(conn.id, { progress: { done: Math.min(i + PARALLEL, batch.length), total: batch.length } });
     }
 
     summary.remaining = candidates.length - summary.processed;
     const complete = !stoppedEarly && candidates.length <= cap;
     // Only a complete pass moves the cursor; otherwise the next check lists the same window and skips what's done.
     if (complete) await source.commit();
-    updateConnection(conn.id, {
+    await updateConnection(conn.id, {
       lastSyncAt: new Date(),
       progress: null,
       backfillDone: conn.backfillDone || complete,
@@ -136,14 +135,14 @@ export async function syncConnection(connectionId: number): Promise<SyncSummary 
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     if (err instanceof ReauthRequiredError) {
-      updateConnection(conn.id, { status: "needs_reauth", lastError: message, progress: null });
+      await updateConnection(conn.id, { status: "needs_reauth", lastError: message, progress: null });
       return null;
     }
     if (err instanceof BudgetExceededError) {
-      updateConnection(conn.id, { lastError: `Paused: ${message}`, progress: null, lastSyncAt: new Date() });
+      await updateConnection(conn.id, { lastError: `Paused: ${message}`, progress: null, lastSyncAt: new Date() });
       throw err;
     }
-    updateConnection(conn.id, { status: "error", lastError: message.slice(0, 500), progress: null, lastSyncAt: new Date() });
+    await updateConnection(conn.id, { status: "error", lastError: message.slice(0, 500), progress: null, lastSyncAt: new Date() });
     throw err;
   } finally {
     await source?.close().catch(() => undefined);

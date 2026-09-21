@@ -8,8 +8,8 @@ import { withUser } from "@/lib/api";
  * Sec-Fetch-Site must be same-origin.
  */
 export function GET(req: Request) {
-  return withUser(req, (user) => {
+  return withUser(req, async (user) => {
     if (req.headers.get("sec-fetch-site") !== "same-origin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    return NextResponse.json({ token: getExtensionState(user.id).token }, { headers: { "cache-control": "no-store" } });
+    return NextResponse.json({ token: (await getExtensionState(user.id)).token }, { headers: { "cache-control": "no-store" } });
   });
 }

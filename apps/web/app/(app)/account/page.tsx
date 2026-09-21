@@ -39,8 +39,8 @@ const SEARCH = {
 
 export default async function AccountPage() {
   const user = await requirePageUser();
-  const included = listDashboards(user.id).filter((d) => d.notify);
-  const archived = archivedDashboards(user.id).map((d) => ({ ...d, archivedAt: d.archivedAt.toISOString() }));
+  const included = (await listDashboards(user.id)).filter((d) => d.notify);
+  const archived = (await archivedDashboards(user.id)).map((d) => ({ ...d, archivedAt: d.archivedAt.toISOString() }));
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div>

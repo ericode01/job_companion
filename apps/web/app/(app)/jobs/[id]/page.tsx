@@ -1,4 +1,4 @@
-import { getDb, schema } from "@jd/core/db";
+import { getDb, one, schema } from "@jd/core/db";
 import { ensureJobDetail } from "@jd/sources";
 import { dashboardName, getDashboard } from "@/lib/dashboards";
 import { requirePageUser } from "@/lib/session";
@@ -18,10 +18,10 @@ export default async function JobPage({
 }) {
   const user = await requirePageUser();
   const id = Number((await params).id);
-  const d = getDashboard(user.id, Number((await searchParams).d ?? user.lastSearchId ?? NaN));
+  const d = await getDashboard(user.id, Number((await searchParams).d ?? user.lastSearchId ?? NaN));
   // Workday and SmartRecruiters postings are stored without their description; fetch it now.
   await ensureJobDetail(id);
-  const row = getDb().select({ html: schema.job.descriptionHtml }).from(schema.job).where(eq(schema.job.id, id)).get();
+  const row = await one(getDb().select({ html: schema.job.descriptionHtml }).from(schema.job).where(eq(schema.job.id, id)));
   if (!row) notFound();
   // Postings come from third-party job boards: strip scripts, styles, images, and event handlers.
   const html = sanitizeHtml(row.html, {

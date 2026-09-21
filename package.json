@@ -12,6 +12,7 @@
     "start": "pnpm --filter @jd/web start",
     "db:generate": "pnpm --filter @jd/core db:generate",
     "db:migrate": "tsx scripts/migrate.ts",
+    "db:copy-sqlite": "tsx scripts/migrate-to-postgres.ts",
     "seed": "tsx scripts/seed-companies.ts",
     "crawl": "tsx scripts/crawl.ts",
     "search": "tsx scripts/search.ts",
@@ -30,7 +31,9 @@
     "serve": "concurrently -k -n web,worker -c blue,magenta \"pnpm --filter @jd/web start\" \"pnpm worker\""
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^22.20.3",
+    "better-sqlite3": "^13.0.3",
     "concurrently": "^10.0.5",
     "tsx": "^4.23.13",
     "typescript": "^5.9.3",

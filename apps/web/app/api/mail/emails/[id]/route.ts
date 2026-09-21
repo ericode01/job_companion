@@ -17,6 +17,6 @@ const Action = z.discriminatedUnion("type", [
 export function PATCH(req: Request, { params }: Ctx) {
   return withUser(req, async (user) => {
     const action = Action.parse(await readJson(req));
-    return reviewEmail(user.id, Number((await params).id), action) ? json({ ok: true }) : notFound();
+    return await reviewEmail(user.id, Number((await params).id), action) ? json({ ok: true }) : notFound();
   });
 }

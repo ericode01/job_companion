@@ -1,6 +1,6 @@
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { getSettings, type DiscoveryCandidate, type SearchFilter } from "@jd/core";
-import { getDb, schema } from "@jd/core/db";
+import { getDb, one, returned, schema } from "@jd/core/db";
 import { assertBudget, forModel, parseStructured, recordMessageUsage } from "@jd/llm";
 import { adapters, boardName, findAtsForSite, storeCompanyJobs } from "@jd/sources";
 import { and, desc, eq } from "drizzle-orm";
@@ -52,13 +52,13 @@ export function briefFor(filter: SearchFilter, rawQuery: string): string {
   return `Technology companies ${where}${roles ? `, for roles like: ${roles}` : ""}. Original search: "${rawQuery}".`;
 }
 
-function trackedCompanies(limit = 400): string[] {
-  return getDb()
-    .select({ name: company.name, domain: company.domain })
-    .from(company)
-    .limit(limit)
-    .all()
-    .map((c) => c.name);
+async function trackedCompanies(limit = 400): Promise<string[]> {
+  return (
+    await getDb()
+      .select({ name: company.name, domain: company.domain })
+      .from(company)
+      .limit(limit)
+  ).map((c) => c.name);
 }
 
 async function proposeCompanies(
@@ -66,9 +66,9 @@ async function proposeCompanies(
   wanted: number,
   opts: { background: boolean },
 ): Promise<z.infer<typeof CandidatesSchema>["companies"]> {
-  const { models } = getSettings("ai");
-  const { maxWebSearches } = getSettings("research");
-  const tracked = trackedCompanies();
+  const { models } = await getSettings("ai");
+  const { maxWebSearches } = await getSettings("research");
+  const tracked = await trackedCompanies();
   assertNativeSearch(models.research);
   const research = forModel(models.research);
 
@@ -87,12 +87,12 @@ async function proposeCompanies(
       ],
     })
     .finalMessage();
-  recordMessageUsage("discover_companies", models.research, response);
+  await recordMessageUsage("discover_companies", models.research, response);
   assertUsableStop(response, "find companies");
 
   const listing = textOf(response).trim();
   if (!listing) throw new NonRetryableError("The search came back empty.");
-  assertBudget(opts);
+  await assertBudget(opts);
 
   const extraction = forModel(models.extraction);
   const extracted = await extraction.client.messages.create({
@@ -102,7 +102,7 @@ async function proposeCompanies(
     messages: [{ role: "user", content: listing }],
     output_config: { format: zodOutputFormat(CandidatesSchema) },
   });
-  recordMessageUsage("discover_extract", models.extraction, extracted);
+  await recordMessageUsage("discover_extract", models.extraction, extracted);
   assertUsableStop(extracted, "read the list of companies");
   return parseStructured(extracted, CandidatesSchema, "list of companies").companies;
 }
@@ -124,7 +124,7 @@ export async function resolveCandidate(c: DiscoveryCandidate): Promise<Discovery
   if (!domain) return { ...c, status: "no_board", note: "No website given" };
 
   const db = getDb();
-  const existingByDomain = db.select().from(company).where(eq(company.domain, domain)).get();
+  const existingByDomain = await one(db.select().from(company).where(eq(company.domain, domain)));
   if (existingByDomain) {
     return { ...c, domain, status: "exists", companyId: existingByDomain.id, atsType: existingByDomain.atsType, atsSlug: existingByDomain.atsSlug };
   }
@@ -139,32 +139,34 @@ export async function resolveCandidate(c: DiscoveryCandidate): Promise<Discovery
   }
   if (!hit) return { ...c, domain, status: "no_board", note: "No Greenhouse, Lever, Ashby, Workday or SmartRecruiters board found" };
 
-  const already = db
-    .select()
-    .from(company)
-    .where(and(eq(company.atsType, hit.atsType), eq(company.atsSlug, hit.atsSlug)))
-    .get();
+  const already = await one(
+    db
+      .select()
+      .from(company)
+      .where(and(eq(company.atsType, hit.atsType), eq(company.atsSlug, hit.atsSlug))),
+  );
   if (already) {
     return { ...c, domain, status: "exists", companyId: already.id, atsType: hit.atsType, atsSlug: hit.atsSlug, openJobs: hit.openJobs };
   }
 
-  const row = db
-    .insert(company)
-    .values({
-      name: c.name.trim() || hit.companyName || boardName(hit.atsType, hit.atsSlug),
-      domain,
-      atsType: hit.atsType,
-      atsSlug: hit.atsSlug,
-      source: "discovered",
-    })
-    .returning()
-    .get();
+  const row = await returned(
+    db
+      .insert(company)
+      .values({
+        name: c.name.trim() || hit.companyName || boardName(hit.atsType, hit.atsSlug),
+        domain,
+        atsType: hit.atsType,
+        atsSlug: hit.atsSlug,
+        source: "discovered",
+      })
+      .returning(),
+  );
 
   // Store the board's postings now so the company isn't empty until the next crawl.
-  const { maxJobsPerBoard } = getSettings("sources");
+  const { maxJobsPerBoard } = await getSettings("sources");
   try {
     const { jobs } = await adapters[hit.atsType].listJobs(hit.atsSlug, { maxJobs: maxJobsPerBoard });
-    storeCompanyJobs(row.id, hit.atsType, jobs);
+    await storeCompanyJobs(row.id, hit.atsType, jobs);
     return { ...c, domain, status: "added", companyId: row.id, atsType: hit.atsType, atsSlug: hit.atsSlug, openJobs: jobs.length };
   } catch {
     // The board answered during detection, so leave the company in place for the next crawl.
@@ -172,23 +174,24 @@ export async function resolveCandidate(c: DiscoveryCandidate): Promise<Discovery
   }
 }
 
-export function startDiscoveryRun(prompt: string, trigger: "manual" | "schedule", searchId: number | null, startedBy: number | null = null): DiscoveryRunRow {
-  return getDb()
-    .insert(discoveryRun)
-    .values({ prompt, trigger, searchId, startedBy, status: "running", candidates: [] })
-    .returning()
-    .get();
+export async function startDiscoveryRun(prompt: string, trigger: "manual" | "schedule", searchId: number | null, startedBy: number | null = null): Promise<DiscoveryRunRow> {
+  return await returned(
+    getDb()
+      .insert(discoveryRun)
+      .values({ prompt, trigger, searchId, startedBy, status: "running", candidates: [] })
+      .returning(),
+  );
 }
 
 /** True when "look for new companies" is on and none has started in the last day. */
-export function discoveryDue(now = new Date()): boolean {
-  if (!getSettings("sources").autoGrowCompanies) return false;
-  const last = getDb().select().from(discoveryRun).orderBy(desc(discoveryRun.id)).limit(1).get();
+export async function discoveryDue(now = new Date()): Promise<boolean> {
+  if (!(await getSettings("sources")).autoGrowCompanies) return false;
+  const last = await one(getDb().select().from(discoveryRun).orderBy(desc(discoveryRun.id)).limit(1));
   return !last || now.getTime() - last.createdAt.getTime() > 86_400_000;
 }
 
-export function latestDiscoveryRuns(limit = 10): DiscoveryRunRow[] {
-  return getDb().select().from(discoveryRun).orderBy(desc(discoveryRun.id)).limit(limit).all();
+export async function latestDiscoveryRuns(limit = 10): Promise<DiscoveryRunRow[]> {
+  return await getDb().select().from(discoveryRun).orderBy(desc(discoveryRun.id)).limit(limit);
 }
 
 /**
@@ -197,13 +200,13 @@ export function latestDiscoveryRuns(limit = 10): DiscoveryRunRow[] {
  */
 export async function discoverCompanies(runId: number, opts: { background: boolean }): Promise<DiscoveryRunRow> {
   const db = getDb();
-  const run = db.select().from(discoveryRun).where(eq(discoveryRun.id, runId)).get();
+  const run = await one(db.select().from(discoveryRun).where(eq(discoveryRun.id, runId)));
   if (!run) throw new NonRetryableError(`Discovery run ${runId} not found`);
-  assertBudget(opts);
+  await assertBudget(opts);
 
-  const { maxCompaniesPerDiscovery } = getSettings("sources");
-  const save = (patch: Partial<DiscoveryRunRow>) =>
-    db.update(discoveryRun).set(patch).where(eq(discoveryRun.id, runId)).run();
+  const { maxCompaniesPerDiscovery } = await getSettings("sources");
+  const save = async (patch: Partial<DiscoveryRunRow>) =>
+    await db.update(discoveryRun).set(patch).where(eq(discoveryRun.id, runId));
 
   try {
     const proposed = await proposeCompanies(run.prompt, maxCompaniesPerDiscovery, opts);
@@ -220,19 +223,19 @@ export async function discoverCompanies(runId: number, opts: { background: boole
       companyId: null,
       note: null,
     }));
-    save({ candidates });
+    await save({ candidates });
 
     // Sequential: each candidate fetches a handful of pages, and a run is a dozen candidates.
     for (let i = 0; i < candidates.length; i++) {
       candidates[i] = await resolveCandidate(candidates[i]!);
       candidates = [...candidates];
-      save({ candidates, added: candidates.filter((c) => c.status === "added").length });
+      await save({ candidates, added: candidates.filter((c) => c.status === "added").length });
     }
 
-    save({ status: "done", finishedAt: new Date() });
+    await save({ status: "done", finishedAt: new Date() });
   } catch (err) {
-    save({ status: "failed", error: err instanceof Error ? err.message : String(err), finishedAt: new Date() });
+    await save({ status: "failed", error: err instanceof Error ? err.message : String(err), finishedAt: new Date() });
     throw err;
   }
-  return db.select().from(discoveryRun).where(eq(discoveryRun.id, runId)).get()!;
+  return (await one(db.select().from(discoveryRun).where(eq(discoveryRun.id, runId))))!;
 }

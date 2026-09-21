@@ -8,8 +8,8 @@ export const metadata: Metadata = { title: "Set up" };
 export const dynamic = "force-dynamic";
 
 /** Only reachable while there are no accounts. */
-export default function SetupPage() {
-  if (userCount() > 0) redirect("/login");
+export default async function SetupPage() {
+  if (await userCount() > 0) redirect("/login");
   return (
     <>
       <div className="space-y-1 text-center">

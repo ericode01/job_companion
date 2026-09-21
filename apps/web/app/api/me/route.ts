@@ -15,7 +15,7 @@ const Patch = z.object({
 
 export function PATCH(req: Request) {
   return withUser(req, async (user) => {
-    updateUser(user.id, Patch.parse(await readJson(req)));
-    return json({ user: toPublicUser(getUser(user.id)!) });
+    await updateUser(user.id, Patch.parse(await readJson(req)));
+    return json({ user: toPublicUser((await getUser(user.id))!) });
   });
 }

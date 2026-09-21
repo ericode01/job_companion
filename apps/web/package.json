@@ -9,6 +9,7 @@
     "start": "next start -H ${HOST:-127.0.0.1} -p ${PORT:-4317}"
   },
   "dependencies": {
+    "@google-cloud/storage": "^8.2.0",
     "@jd/apply": "workspace:*",
     "@jd/core": "workspace:*",
     "@jd/digest": "workspace:*",
@@ -21,6 +22,7 @@
     "lucide-react": "^1.46.0",
     "mailparser": "^3.9.28",
     "next": "^16.3.5",
+    "pg": "^8.23.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "sanitize-html": "^2.17.7",

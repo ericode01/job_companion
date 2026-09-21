@@ -7,7 +7,7 @@ import { clearSessionCookie } from "@/lib/session";
 export async function POST(req: Request) {
   const blocked = assertSameOrigin(req);
   if (blocked) return blocked;
-  deleteSession((await cookies()).get(SESSION_COOKIE)?.value);
+  await deleteSession((await cookies()).get(SESSION_COOKIE)?.value);
   await clearSessionCookie();
   return NextResponse.json({ ok: true });
 }

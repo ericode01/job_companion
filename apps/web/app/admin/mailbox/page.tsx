@@ -17,26 +17,26 @@ const STATUS: Record<string, string> = {
   error: "Last check failed",
 };
 
-export default function AdminMailbox() {
+export default async function AdminMailbox() {
   loadEnv();
   const google = googleConfigured();
   const secretFromEnv = Boolean(process.env.SECRET_KEY);
-  const names = new Map(listUsers().map((u) => [u.id, u.name]));
+  const names = new Map((await listUsers()).map((u) => [u.id, u.name]));
   // Connection health only: admins never see anyone's email.
-  const connections = getDb()
-    .select({
-      id: schema.mailboxConnection.id,
-      userId: schema.mailboxConnection.userId,
-      provider: schema.mailboxConnection.provider,
-      address: schema.mailboxConnection.address,
-      status: schema.mailboxConnection.status,
-      secret: schema.mailboxConnection.secret,
-      lastSyncAt: schema.mailboxConnection.lastSyncAt,
-      lastError: schema.mailboxConnection.lastError,
-    })
-    .from(schema.mailboxConnection)
-    .all()
-    .filter((c) => c.secret);
+  const connections = (
+    await getDb()
+      .select({
+        id: schema.mailboxConnection.id,
+        userId: schema.mailboxConnection.userId,
+        provider: schema.mailboxConnection.provider,
+        address: schema.mailboxConnection.address,
+        status: schema.mailboxConnection.status,
+        secret: schema.mailboxConnection.secret,
+        lastSyncAt: schema.mailboxConnection.lastSyncAt,
+        lastError: schema.mailboxConnection.lastError,
+      })
+      .from(schema.mailboxConnection)
+  ).filter((c) => c.secret);
 
   return (
     <div className="space-y-5">

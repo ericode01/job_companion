@@ -1,12 +1,12 @@
 import "server-only";
 import { getSettings, getUserSettings, type PublicUser, type SearchFilter } from "@jd/core";
-import { getDb, schema } from "@jd/core/db";
+import { getDb, one, returned, schema } from "@jd/core/db";
 import { getExtensionState, pendingInboxCount } from "@jd/apply";
 import { AI_KEY_HINT, hasApiKey } from "@jd/llm";
 import { activeConnections, chooseDashboard, mailForCards, openActions, reviewQueue } from "@jd/mail";
 import { currentMasterResume, enqueueFitScores, getFitScores } from "@jd/research";
 import { hydrateForFilter, runSearch, type SearchResult } from "@jd/sources";
-import { and, asc, count, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, inArray, isNull, lt, sql } from "drizzle-orm";
 
 const { savedSearch, jobMatch, job, application, company } = schema;
 export type Dashboard = typeof savedSearch.$inferSelect;
@@ -15,9 +15,9 @@ export const dashboardName = (d: Pick<Dashboard, "name" | "rawQuery">) =>
   d.name?.trim() || d.rawQuery.charAt(0).toUpperCase() + d.rawQuery.slice(1);
 
 /** A dashboard only if it belongs to this person. */
-export function getDashboard(userId: number, id: number): Dashboard | null {
+export async function getDashboard(userId: number, id: number): Promise<Dashboard | null> {
   if (!Number.isInteger(id)) return null;
-  return getDb().select().from(savedSearch).where(and(eq(savedSearch.id, id), eq(savedSearch.userId, userId))).get() ?? null;
+  return await one(getDb().select().from(savedSearch).where(and(eq(savedSearch.id, id), eq(savedSearch.userId, userId)))) ?? null;
 }
 
 export interface DashboardSummary {
@@ -29,32 +29,31 @@ export interface DashboardSummary {
 }
 
 /** The switcher's list: each dashboard with matches first seen since you last opened it. */
-export function listDashboards(userId: number): DashboardSummary[] {
+export async function listDashboards(userId: number): Promise<DashboardSummary[]> {
   const db = getDb();
-  const rows = db
+  const rows = await db
     .select()
     .from(savedSearch)
     .where(and(eq(savedSearch.userId, userId), isNull(savedSearch.archivedAt)))
-    .orderBy(asc(savedSearch.id))
-    .all();
+    .orderBy(asc(savedSearch.id));
   if (!rows.length) return [];
   const ids = rows.map((r) => r.id);
   const newCounts = new Map(
-    db
-      .select({ searchId: jobMatch.searchId, n: count() })
-      .from(jobMatch)
-      .innerJoin(job, eq(job.id, jobMatch.jobId))
-      .innerJoin(savedSearch, eq(savedSearch.id, jobMatch.searchId))
-      .where(
-        and(
-          inArray(jobMatch.searchId, ids),
-          isNull(job.closedAt),
-          gt(job.firstSeenAt, sql`coalesce(${savedSearch.lastViewedAt}, ${savedSearch.createdAt})`),
-        ),
-      )
-      .groupBy(jobMatch.searchId)
-      .all()
-      .map((r) => [r.searchId, r.n]),
+    (
+      await db
+        .select({ searchId: jobMatch.searchId, n: count() })
+        .from(jobMatch)
+        .innerJoin(job, eq(job.id, jobMatch.jobId))
+        .innerJoin(savedSearch, eq(savedSearch.id, jobMatch.searchId))
+        .where(
+          and(
+            inArray(jobMatch.searchId, ids),
+            isNull(job.closedAt),
+            gt(job.firstSeenAt, sql`coalesce(${savedSearch.lastViewedAt}, ${savedSearch.createdAt})`),
+          ),
+        )
+        .groupBy(jobMatch.searchId)
+    ).map((r) => [r.searchId, r.n]),
   );
   return rows.map((r) => ({
     id: r.id,
@@ -65,12 +64,13 @@ export function listDashboards(userId: number): DashboardSummary[] {
   }));
 }
 
-export function createDashboard(userId: number, input: { rawQuery: string; filter: SearchFilter; parsedBy: "llm" | "rules"; name?: string | null }): Dashboard {
-  return getDb()
-    .insert(savedSearch)
-    .values({ userId, rawQuery: input.rawQuery, filter: input.filter, parsedBy: input.parsedBy, name: input.name ?? null })
-    .returning()
-    .get();
+export async function createDashboard(userId: number, input: { rawQuery: string; filter: SearchFilter; parsedBy: "llm" | "rules"; name?: string | null }): Promise<Dashboard> {
+  return await returned(
+    getDb()
+      .insert(savedSearch)
+      .values({ userId, rawQuery: input.rawQuery, filter: input.filter, parsedBy: input.parsedBy, name: input.name ?? null })
+      .returning(),
+  );
 }
 
 /**
@@ -78,18 +78,17 @@ export function createDashboard(userId: number, input: { rawQuery: string; filte
  * or found in email) go to the dashboard whose search found the job, else the one whose title
  * rules fit, else the one you opened last.
  */
-export function assignOrphanApplications(userId: number): void {
+export async function assignOrphanApplications(userId: number): Promise<void> {
   const db = getDb();
-  const orphans = db
+  const orphans = await db
     .select({ id: application.id, jobId: application.jobId, title: sql<string | null>`coalesce(${job.title}, ${application.jobTitle})` })
     .from(application)
     .leftJoin(job, eq(job.id, application.jobId))
-    .where(and(eq(application.userId, userId), isNull(application.searchId)))
-    .all();
+    .where(and(eq(application.userId, userId), isNull(application.searchId)));
   for (const o of orphans) {
-    const searchId = chooseDashboard(userId, o.jobId, o.title);
+    const searchId = await chooseDashboard(userId, o.jobId, o.title);
     if (searchId === null) return;
-    db.update(application).set({ searchId }).where(eq(application.id, o.id)).run();
+    await db.update(application).set({ searchId }).where(eq(application.id, o.id));
   }
 }
 
@@ -106,36 +105,39 @@ export interface DashboardResult extends SearchResult {
 export async function dashboardResults(user: PublicUser, d: Dashboard, opts: { markViewed?: boolean; since?: Date | null } = {}) {
   const db = getDb();
   await hydrateForFilter(d.filter, user.id);
-  const results = runSearch(d.id, d.filter, user.id);
+  const results = await runSearch(d.id, d.filter, user.id);
   const jobIds = results.map((r) => r.jobId);
-  const resume = currentMasterResume(user.id);
+  const resume = await currentMasterResume(user.id);
   const parsed = resume?.parseStatus === "done" ? resume : null;
-  const { scoreSearchResults, maxScoredPerSearch } = getSettings("research");
+  const { scoreSearchResults, maxScoredPerSearch } = await getSettings("research");
   // Results are newest first, so the cap scores the freshest postings.
-  if (parsed && scoreSearchResults) enqueueFitScores(user.id, jobIds.slice(0, maxScoredPerSearch), true);
-  const scores = parsed ? getFitScores(jobIds, parsed.sourceHash) : new Map<number, number>();
+  if (parsed && scoreSearchResults) await enqueueFitScores(user.id, jobIds.slice(0, maxScoredPerSearch), true);
+  const scores = parsed ? await getFitScores(jobIds, parsed.sourceHash) : new Map<number, number>();
   const apps = new Map(
     jobIds.length
-      ? db
+      ? (
+        await db
           .select({ jobId: application.jobId, status: application.status })
           .from(application)
           .where(and(eq(application.userId, user.id), inArray(application.jobId, jobIds)))
-          .all()
-          .map((a) => [a.jobId, a.status])
+      ).map((a) => [a.jobId, a.status])
       : [],
   );
   // Polls pass back the first load's cut-off so "New" doesn't vanish once the visit is recorded.
   const since = opts.since ?? d.lastViewedAt ?? d.createdAt;
   const pendingFit =
-    db
-      .select({ n: count() })
-      .from(schema.task)
-      .where(and(eq(schema.task.kind, "score_fit"), inArray(schema.task.status, ["queued", "running"])))
-      .get()?.n ?? 0;
+    (
+      await one(
+        db
+          .select({ n: count() })
+          .from(schema.task)
+          .where(and(eq(schema.task.kind, "score_fit"), inArray(schema.task.status, ["queued", "running"]))),
+      )
+    )?.n ?? 0;
 
   if (opts.markViewed) {
-    db.update(savedSearch).set({ lastViewedAt: new Date() }).where(eq(savedSearch.id, d.id)).run();
-    db.update(schema.user).set({ lastSearchId: d.id }).where(eq(schema.user.id, user.id)).run();
+    await db.update(savedSearch).set({ lastViewedAt: new Date() }).where(eq(savedSearch.id, d.id));
+    await db.update(schema.user).set({ lastSearchId: d.id }).where(eq(schema.user.id, user.id));
   }
 
   const rows: DashboardResult[] = results.map((r) => ({
@@ -156,10 +158,10 @@ export async function dashboardResults(user: PublicUser, d: Dashboard, opts: { m
  * process, not about discovery, so it's one board; the search is a tag you can filter and change.
  * Applications on archived searches are included: nothing else in the app would show them.
  */
-export function pipelineFor(userId: number) {
-  assignOrphanApplications(userId);
+export async function pipelineFor(userId: number) {
+  await assignOrphanApplications(userId);
   const db = getDb();
-  const rows = db
+  const rows = await db
     .select({
       id: application.id,
       jobId: application.jobId,
@@ -182,12 +184,11 @@ export function pipelineFor(userId: number) {
     .leftJoin(job, eq(job.id, application.jobId))
     .leftJoin(company, eq(company.id, job.companyId))
     .where(eq(application.userId, userId))
-    .orderBy(desc(application.updatedAt))
-    .all();
-  const resume = currentMasterResume(userId);
+    .orderBy(desc(application.updatedAt));
+  const resume = await currentMasterResume(userId);
   const jobIds = rows.map((r) => r.jobId).filter((id): id is number => id !== null);
-  const scores = resume ? getFitScores(jobIds, resume.sourceHash) : new Map<number, number>();
-  const mail = mailForCards(userId, rows.map((r) => r.id));
+  const scores = resume ? await getFitScores(jobIds, resume.sourceHash) : new Map<number, number>();
+  const mail = await mailForCards(userId, rows.map((r) => r.id));
   return rows.map((r) => {
     const m = mail.get(r.id);
     return {
@@ -203,23 +204,23 @@ export function pipelineFor(userId: number) {
 }
 
 /** The pipeline's filter chips: your live searches, plus archived ones that still hold cards. */
-export function pipelineSearches(userId: number): { id: number; name: string; archived: boolean }[] {
+export async function pipelineSearches(userId: number): Promise<{ id: number; name: string; archived: boolean }[]> {
   const db = getDb();
   const withCards = new Set(
-    db
-      .selectDistinct({ searchId: application.searchId })
-      .from(application)
-      .where(eq(application.userId, userId))
-      .all()
-      .flatMap((r) => (r.searchId === null ? [] : [r.searchId])),
+    (
+      await db
+        .selectDistinct({ searchId: application.searchId })
+        .from(application)
+        .where(eq(application.userId, userId))
+    ).flatMap((r) => (r.searchId === null ? [] : [r.searchId])),
   );
-  return db
-    .select()
-    .from(savedSearch)
-    .where(eq(savedSearch.userId, userId))
-    .orderBy(asc(savedSearch.id))
-    .all()
-    .filter((d) => !d.archivedAt || withCards.has(d.id))
+  return (
+    await db
+      .select()
+      .from(savedSearch)
+      .where(eq(savedSearch.userId, userId))
+      .orderBy(asc(savedSearch.id))
+  ).filter((d) => !d.archivedAt || withCards.has(d.id))
     .map((d) => ({ id: d.id, name: dashboardName(d), archived: Boolean(d.archivedAt) }));
 }
 
@@ -237,11 +238,11 @@ export interface CompanionStep {
  * What to do next, most useful first. Setup gaps come before job actions, because every later
  * step (fit scores, auto-filled forms) depends on them.
  */
-export function companionSteps(user: PublicUser, d: Dashboard, stats: { newStrong: number; newCount: number }): CompanionStep[] {
+export async function companionSteps(user: PublicUser, d: Dashboard, stats: { newStrong: number; newCount: number }): Promise<CompanionStep[]> {
   const steps: CompanionStep[] = [];
   // People waiting on a reply come first: they're time-sensitive, and nothing else is.
   const mailSteps: CompanionStep[] = [];
-  const mailboxes = activeConnections(user.id);
+  const mailboxes = await activeConnections(user.id);
   const reauth = mailboxes.find((c) => c.status === "needs_reauth");
   if (reauth) {
     mailSteps.push({
@@ -253,7 +254,7 @@ export function companionSteps(user: PublicUser, d: Dashboard, stats: { newStron
     });
   }
   // Applications are yours, not a search's, so these steps count all of them wherever you are.
-  const actions = openActions(user.id);
+  const actions = await openActions(user.id);
   if (actions.length > 0) {
     const first = actions[0]!;
     mailSteps.push({
@@ -267,7 +268,7 @@ export function companionSteps(user: PublicUser, d: Dashboard, stats: { newStron
       tone: "action",
     });
   }
-  const review = reviewQueue(user.id).length;
+  const review = (await reviewQueue(user.id)).length;
   if (review > 0) {
     mailSteps.push({
       id: "mail-review",
@@ -278,7 +279,7 @@ export function companionSteps(user: PublicUser, d: Dashboard, stats: { newStron
     });
   }
   steps.push(...mailSteps);
-  const resume = currentMasterResume(user.id);
+  const resume = await currentMasterResume(user.id);
   if (!resume) {
     steps.push({
       id: "resume",
@@ -296,7 +297,7 @@ export function companionSteps(user: PublicUser, d: Dashboard, stats: { newStron
       tone: "setup",
     });
   }
-  const inbox = pendingInboxCount(user.id);
+  const inbox = await pendingInboxCount(user.id);
   if (inbox > 0) {
     steps.push({
       id: "inbox",
@@ -306,7 +307,7 @@ export function companionSteps(user: PublicUser, d: Dashboard, stats: { newStron
       tone: "setup",
     });
   }
-  const ext = getExtensionState(user.id);
+  const ext = await getExtensionState(user.id);
   if (!ext.lastSeenAt) {
     steps.push({
       id: "extension",
@@ -335,11 +336,16 @@ export function companionSteps(user: PublicUser, d: Dashboard, stats: { newStron
   }
   const db = getDb();
   const stalled =
-    db
-      .select({ n: count() })
-      .from(application)
-      .where(and(eq(application.userId, user.id), eq(application.status, "applying"), sql`${application.updatedAt} < ${Date.now() - 2 * 86_400_000}`))
-      .get()?.n ?? 0;
+    (
+      await one(
+        db
+          .select({ n: count() })
+          .from(application)
+          // A typed comparison: the raw-SQL version compared the column with epoch milliseconds, which
+          // only worked while SQLite stored times as numbers.
+          .where(and(eq(application.userId, user.id), eq(application.status, "applying"), lt(application.updatedAt, new Date(Date.now() - 2 * 86_400_000)))),
+      )
+    )?.n ?? 0;
   if (stalled > 0) {
     steps.push({
       id: "stalled",
@@ -349,13 +355,16 @@ export function companionSteps(user: PublicUser, d: Dashboard, stats: { newStron
       tone: "progress",
     });
   }
-  if (mailboxes.length === 0 && getSettings("mailSync").enabled) {
+  if (mailboxes.length === 0 && (await getSettings("mailSync")).enabled) {
     const applied =
-      db
-        .select({ n: count() })
-        .from(application)
-        .where(and(eq(application.userId, user.id), inArray(application.status, ["applied", "interview", "offer"])))
-        .get()?.n ?? 0;
+      (
+        await one(
+          db
+            .select({ n: count() })
+            .from(application)
+            .where(and(eq(application.userId, user.id), inArray(application.status, ["applied", "interview", "offer"]))),
+        )
+      )?.n ?? 0;
     if (applied > 0) {
       steps.push({
         id: "mail-connect",
@@ -366,7 +375,7 @@ export function companionSteps(user: PublicUser, d: Dashboard, stats: { newStron
       });
     }
   }
-  if (!d.notify && getUserSettings(user.id, "digest").enabled) {
+  if (!d.notify && (await getUserSettings(user.id, "digest")).enabled) {
     steps.push({
       id: "digest",
       title: "Get this search's new matches by email",
@@ -388,27 +397,27 @@ export function companionSteps(user: PublicUser, d: Dashboard, stats: { newStron
 }
 
 /** What changed since your last visit, for the companion card. Cheap: no search is run. */
-export function sinceLastVisit(userId: number, d: Dashboard): { newCount: number; newStrong: number } {
+export async function sinceLastVisit(userId: number, d: Dashboard): Promise<{ newCount: number; newStrong: number }> {
   const db = getDb();
   const since = d.lastViewedAt ?? d.createdAt;
-  const fresh = db
-    .select({ jobId: jobMatch.jobId })
-    .from(jobMatch)
-    .innerJoin(job, eq(job.id, jobMatch.jobId))
-    .where(and(eq(jobMatch.searchId, d.id), isNull(job.closedAt), gt(job.firstSeenAt, since)))
-    .all()
-    .map((r) => r.jobId);
-  const resume = currentMasterResume(userId);
-  const scores = resume?.parseStatus === "done" && fresh.length ? getFitScores(fresh, resume.sourceHash) : new Map<number, number>();
+  const fresh = (
+    await db
+      .select({ jobId: jobMatch.jobId })
+      .from(jobMatch)
+      .innerJoin(job, eq(job.id, jobMatch.jobId))
+      .where(and(eq(jobMatch.searchId, d.id), isNull(job.closedAt), gt(job.firstSeenAt, since)))
+  ).map((r) => r.jobId);
+  const resume = await currentMasterResume(userId);
+  const scores = resume?.parseStatus === "done" && fresh.length ? await getFitScores(fresh, resume.sourceHash) : new Map<number, number>();
   return { newCount: fresh.length, newStrong: [...scores.values()].filter((s) => s >= 80).length };
 }
 
-export function archivedDashboards(userId: number): { id: number; name: string; archivedAt: Date }[] {
-  return getDb()
-    .select()
-    .from(savedSearch)
-    .where(and(eq(savedSearch.userId, userId), sql`${savedSearch.archivedAt} is not null`))
-    .orderBy(desc(savedSearch.archivedAt))
-    .all()
-    .map((d) => ({ id: d.id, name: dashboardName(d), archivedAt: d.archivedAt! }));
+export async function archivedDashboards(userId: number): Promise<{ id: number; name: string; archivedAt: Date }[]> {
+  return (
+    await getDb()
+      .select()
+      .from(savedSearch)
+      .where(and(eq(savedSearch.userId, userId), sql`${savedSearch.archivedAt} is not null`))
+      .orderBy(desc(savedSearch.archivedAt))
+  ).map((d) => ({ id: d.id, name: dashboardName(d), archivedAt: d.archivedAt! }));
 }

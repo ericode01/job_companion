@@ -1,9 +1,8 @@
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { one } from "@jd/core/db";
 
-process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "jd-prices-"));
+const { useTestDb } = await import("../src/testing");
+await useTestDb("jd-prices-");
 
 const { dearestPrice, estimateCostUsd, getSettings, isEstimatedModel, normalizeModelId, priceFor, reconcileAiSettings, saveSettings } = await import("../src");
 const { getDb, schema } = await import("../src/db");
@@ -53,68 +52,67 @@ describe("pricing a model", () => {
 });
 
 describe("recording what a call cost", () => {
-  const rows = () => getDb().select().from(schema.llmUsage).all();
+  const rows = async () => await getDb().select().from(schema.llmUsage);
 
   it("bills what the provider says it charged, in preference to any estimate", async () => {
     const { recordUsage } = await import("../src/usage");
-    recordUsage({ ...base, model: "deepseek/deepseek-v4-flash", costUsd: 0.000123 });
-    const row = rows().at(-1)!;
+    await recordUsage({ ...base, model: "deepseek/deepseek-v4-flash", costUsd: 0.000123 });
+    const row = (await rows()).at(-1)!;
     expect(row.costUsd).toBeCloseTo(0.000123, 9);
   });
 
   it("falls back to the estimate when the provider is silent, as Anthropic is", async () => {
     const { recordUsage } = await import("../src/usage");
-    recordUsage({ ...base, model: "claude-haiku-4-5" });
-    expect(rows().at(-1)!.costUsd).toBeCloseTo(6, 5);
+    await recordUsage({ ...base, model: "claude-haiku-4-5" });
+    expect((await rows()).at(-1)!.costUsd).toBeCloseTo(6, 5);
   });
 });
 
 describe("settings saved before providers were named", () => {
-  it("rewrites bare model ids once, and leaves qualified ones alone", () => {
-    saveSettings("ai", { models: { fitScore: "claude-haiku-4-5", research: "anthropic:claude-sonnet-5" } });
+  it("rewrites bare model ids once, and leaves qualified ones alone", async () => {
+    await saveSettings("ai", { models: { fitScore: "claude-haiku-4-5", research: "anthropic:claude-sonnet-5" } });
     // saveSettings validates but doesn't rewrite: the stored row is still the legacy spelling.
-    expect(getSettings("ai").models.fitScore).toBe("claude-haiku-4-5");
+    expect((await getSettings("ai")).models.fitScore).toBe("claude-haiku-4-5");
 
-    reconcileAiSettings();
-    const after = getSettings("ai").models;
+    await reconcileAiSettings();
+    const after = (await getSettings("ai")).models;
     expect(after.fitScore).toBe("anthropic:claude-haiku-4-5");
     expect(after.research).toBe("anthropic:claude-sonnet-5");
 
     // Idempotent: a second pass changes nothing.
-    const before = getDb().select().from(schema.settings).where(eq(schema.settings.key, "ai")).get()!.updatedAt;
-    reconcileAiSettings();
-    expect(getDb().select().from(schema.settings).where(eq(schema.settings.key, "ai")).get()!.updatedAt).toEqual(before);
+    const before = (await one(getDb().select().from(schema.settings).where(eq(schema.settings.key, "ai"))))!.updatedAt;
+    await reconcileAiSettings();
+    expect((await one(getDb().select().from(schema.settings).where(eq(schema.settings.key, "ai"))))!.updatedAt).toEqual(before);
   });
 
   /** A row as an older build wrote it: only the purposes that existed then, unqualified. */
-  const storeLegacyRow = () =>
-    getDb()
+  const storeLegacyRow = async () =>
+    await getDb()
       .insert(schema.settings)
       .values({ key: "ai", value: { models: { fitScore: "claude-haiku-4-5", research: "claude-sonnet-5" }, dailyCapUsd: 10 } })
-      .onConflictDoUpdate({ target: schema.settings.key, set: { value: { models: { fitScore: "claude-haiku-4-5", research: "claude-sonnet-5" }, dailyCapUsd: 10 } } })
-      .run();
+      .onConflictDoUpdate({ target: schema.settings.key, set: { value: { models: { fitScore: "claude-haiku-4-5", research: "claude-sonnet-5" }, dailyCapUsd: 10 } } });
 
-  it("doesn't move an untouched purpose onto a provider this server has no key for", () => {
+  it("doesn't move an untouched purpose onto a provider this server has no key for", async () => {
     // emailClassify arrived after this install last saved its settings. Adopting its OpenRouter
     // default with no key would quietly drop mailbox sorting back to rules-only.
     delete process.env.OPENROUTER_API_KEY;
-    storeLegacyRow();
-    reconcileAiSettings();
-    const models = getSettings("ai").models;
+    await storeLegacyRow();
+    await reconcileAiSettings();
+    const models = (await getSettings("ai")).models;
     expect(models.emailClassify).toBe("anthropic:claude-haiku-4-5");
     expect(models.fitScore).toBe("anthropic:claude-haiku-4-5");
     // The caps the admin set survive untouched.
-    expect(getSettings("ai").dailyCapUsd).toBe(10);
+    expect((await getSettings("ai")).dailyCapUsd).toBe(10);
   });
 
-  it("takes the new cheap defaults once the key is there", () => {
+  it("takes the new cheap defaults once the key is there", async () => {
     process.env.OPENROUTER_API_KEY = "test-openrouter";
-    storeLegacyRow();
-    reconcileAiSettings();
+    await storeLegacyRow();
+    await reconcileAiSettings();
     // Which model is a judgement call that measurement can change; that it is adopted is the rule.
-    expect(getSettings("ai").models.emailClassify).toMatch(/^openrouter:/);
+    expect((await getSettings("ai")).models.emailClassify).toMatch(/^openrouter:/);
     // A purpose the admin did choose is still respected, just spelled out.
-    expect(getSettings("ai").models.research).toBe("anthropic:claude-sonnet-5");
+    expect((await getSettings("ai")).models.research).toBe("anthropic:claude-sonnet-5");
     delete process.env.OPENROUTER_API_KEY;
   });
 });

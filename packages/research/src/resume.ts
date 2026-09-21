@@ -1,9 +1,8 @@
-import fs from "node:fs";
-import path from "node:path";
 import crypto from "node:crypto";
+import path from "node:path";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
-import { dataDir, getProfile, getSettings, ResumeSourceSchema, saveProfile, type ResumeSource } from "@jd/core";
-import { getDb, schema } from "@jd/core/db";
+import { fileStore, getProfile, getSettings, ResumeSourceSchema, saveProfile, type ResumeSource } from "@jd/core";
+import { getDb, one, returned, schema } from "@jd/core/db";
 import { AI_KEY_HINT, assertBudget, forModel, hasApiKey, parseStructured, recordMessageUsage } from "@jd/llm";
 import { and, desc, eq } from "drizzle-orm";
 import { extractText, getDocumentProxy } from "unpdf";
@@ -32,66 +31,66 @@ export async function saveMasterResume(userId: number, bytes: Uint8Array, fileNa
   } catch {
     throw new ResumeUploadError("Couldn't read that PDF. Is it password-protected or corrupted?");
   }
-  const dir = path.join(dataDir(), "files", "resumes", String(userId));
-  fs.mkdirSync(dir, { recursive: true });
-  const filePath = path.join(dir, `${crypto.randomUUID()}.pdf`);
-  fs.writeFileSync(filePath, bytes);
-  return getDb()
-    .insert(resume)
-    .values({
-      userId,
-      kind: "master",
-      fileName: path.basename(fileName).slice(0, 200),
-      filePath,
-      parsedText: text,
-      sourceHash: sha1(text),
-      parseStatus: hasApiKey() ? "pending" : "skipped",
-      parseError: hasApiKey() ? null : `No API key: add ${AI_KEY_HINT} to .env.local, then parse again.`,
-    })
-    .returning()
-    .get();
-}
-
-export function currentMasterResume(userId: number): Resume | null {
-  return (
+  const filePath = `resumes/${userId}/${crypto.randomUUID()}.pdf`;
+  await fileStore().put(filePath, bytes, "application/pdf");
+  return await returned(
     getDb()
-      .select()
-      .from(resume)
-      .where(and(eq(resume.userId, userId), eq(resume.kind, "master")))
-      .orderBy(desc(resume.id))
-      .limit(1)
-      .get() ?? null
+      .insert(resume)
+      .values({
+        userId,
+        kind: "master",
+        fileName: path.basename(fileName).slice(0, 200),
+        filePath,
+        parsedText: text,
+        sourceHash: sha1(text),
+        parseStatus: hasApiKey() ? "pending" : "skipped",
+        parseError: hasApiKey() ? null : `No API key: add ${AI_KEY_HINT} to .env.local, then parse again.`,
+      })
+      .returning(),
   );
 }
 
-export function listMasterResumes(userId: number): Resume[] {
-  return getDb()
+export async function currentMasterResume(userId: number): Promise<Resume | null> {
+  return (
+    await one(
+      getDb()
+        .select()
+        .from(resume)
+        .where(and(eq(resume.userId, userId), eq(resume.kind, "master")))
+        .orderBy(desc(resume.id))
+        .limit(1),
+    ) ?? null
+  );
+}
+
+export async function listMasterResumes(userId: number): Promise<Resume[]> {
+  return await getDb()
     .select()
     .from(resume)
     .where(and(eq(resume.userId, userId), eq(resume.kind, "master")))
-    .orderBy(desc(resume.id))
-    .all();
+    .orderBy(desc(resume.id));
 }
 
 /** Internal lookup (worker tasks). Request handlers use ownedResume. */
-export function getResume(id: number): Resume | null {
-  return getDb().select().from(resume).where(eq(resume.id, id)).get() ?? null;
+export async function getResume(id: number): Promise<Resume | null> {
+  return await one(getDb().select().from(resume).where(eq(resume.id, id))) ?? null;
 }
 
 /** A resume only if it belongs to this person. */
-export function ownedResume(userId: number, id: number): Resume | null {
-  return getDb().select().from(resume).where(and(eq(resume.id, id), eq(resume.userId, userId))).get() ?? null;
+export async function ownedResume(userId: number, id: number): Promise<Resume | null> {
+  return await one(getDb().select().from(resume).where(and(eq(resume.id, id), eq(resume.userId, userId)))) ?? null;
 }
 
 /** Saves your corrections to the parsed resume. Changing it invalidates fit scores (they are keyed by hash). */
-export function updateResumeSource(id: number, source: ResumeSource): Resume {
+export async function updateResumeSource(id: number, source: ResumeSource): Promise<Resume> {
   const parsed = ResumeSourceSchema.parse(source);
-  const row = getDb()
-    .update(resume)
-    .set({ source: parsed, sourceHash: sha1(parsed), parseStatus: "done", parseError: null, updatedAt: new Date() })
-    .where(and(eq(resume.id, id)))
-    .returning()
-    .get();
+  const row = await one(
+    getDb()
+      .update(resume)
+      .set({ source: parsed, sourceHash: sha1(parsed), parseStatus: "done", parseError: null, updatedAt: new Date() })
+      .where(and(eq(resume.id, id)))
+      .returning(),
+  );
   if (!row) throw new NonRetryableError("Resume not found");
   return row;
 }
@@ -106,12 +105,14 @@ Rules:
 - Nothing may be dropped. Every line on the page must land in some field: GPA, minors, and activities under education details; sections that fit nowhere else (entrepreneurial experience, awards, publications, volunteering, languages) go in "additional" with their original heading. Multi-line items stay as one item.`;
 
 export async function parseResume(resumeId: number, opts: { background: boolean }): Promise<Resume> {
-  const row = getResume(resumeId);
+  const row = await getResume(resumeId);
   if (!row) throw new NonRetryableError(`Resume ${resumeId} not found`);
-  assertBudget(opts);
-  const setting = getSettings("ai").models.resumeParse;
+  await assertBudget(opts);
+  const setting = (await getSettings("ai")).models.resumeParse;
   const { client, model } = forModel(setting);
-  const data = fs.readFileSync(row.filePath).toString("base64");
+  const pdf = await fileStore().get(row.filePath);
+  if (!pdf) throw new NonRetryableError(`The PDF for resume ${resumeId} is missing. Upload it again.`);
+  const data = pdf.toString("base64");
   const response = await client.messages.create({
     model,
     max_tokens: 16000,
@@ -127,21 +128,21 @@ export async function parseResume(resumeId: number, opts: { background: boolean 
     ],
     output_config: { format: zodOutputFormat(ResumeSourceSchema) },
   });
-  recordMessageUsage("resume_parse", setting, response);
+  await recordMessageUsage("resume_parse", setting, response);
   assertUsableStop(response, "parse the resume");
   const parsed = parseStructured(response, ResumeSourceSchema, "resume structure");
-  const updated = updateResumeSource(resumeId, parsed);
-  if (row.userId) prefillProfile(row.userId, parsed);
+  const updated = await updateResumeSource(resumeId, parsed);
+  if (row.userId) await prefillProfile(row.userId, parsed);
   return updated;
 }
 
-export function markResumeParseFailed(resumeId: number, error: string): void {
-  getDb().update(resume).set({ parseStatus: "failed", parseError: error }).where(eq(resume.id, resumeId)).run();
+export async function markResumeParseFailed(resumeId: number, error: string): Promise<void> {
+  await getDb().update(resume).set({ parseStatus: "failed", parseError: error }).where(eq(resume.id, resumeId));
 }
 
 /** Fills empty profile fields from the resume's contact block. Never overwrites what you've entered. */
-function prefillProfile(userId: number, source: ResumeSource): void {
-  const current = getProfile(userId);
+async function prefillProfile(userId: number, source: ResumeSource): Promise<void> {
+  const current = await getProfile(userId);
   const c = source.contact;
   const findLink = (re: RegExp) => c.links.find((l) => re.test(l));
   const links = { ...(current?.links ?? {}) };
@@ -155,7 +156,7 @@ function prefillProfile(userId: number, source: ResumeSource): void {
     location: current?.location || c.location,
     links,
   };
-  saveProfile(userId, values);
+  await saveProfile(userId, values);
 }
 
 /** Compact plain-text rendering used in prompts. */

@@ -5,11 +5,11 @@ import { json, withAdmin } from "@/lib/api";
 
 /** Which mail credentials are present (never their values). */
 export function GET(req: Request) {
-  return withAdmin(req, () => {
+  return withAdmin(req, async () => {
     loadEnv();
     const e = process.env;
     return json({
-      method: getSettings("mail").method,
+      method: (await getSettings("mail")).method,
       smtp: { host: Boolean(e.SMTP_HOST), user: Boolean(e.SMTP_USER), pass: Boolean(e.SMTP_PASS), from: e.DIGEST_FROM ?? e.SMTP_USER ?? null },
       resend: { key: Boolean(e.RESEND_API_KEY), from: e.DIGEST_FROM ?? null },
     });
@@ -19,7 +19,7 @@ export function GET(req: Request) {
 /** Sends a short test message to the admin's own address. */
 export function POST(req: Request) {
   return withAdmin(req, async (me) => {
-    const { method } = getSettings("mail");
+    const { method } = await getSettings("mail");
     try {
       await sendMail(method, {
         to: me.email,

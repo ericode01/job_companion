@@ -3,9 +3,9 @@ import { z } from "zod";
 import { json, readJson, withAdmin } from "@/lib/api";
 
 export function GET(req: Request) {
-  return withAdmin(req, () =>
+  return withAdmin(req, async () =>
     json(
-      listInvites().map(({ tokenHash: _t, ...i }) => ({
+      (await listInvites()).map(({ tokenHash: _t, ...i }) => ({
         ...i,
         state: i.usedAt ? "used" : i.expiresAt.getTime() < Date.now() ? "expired" : "open",
       })),
@@ -22,7 +22,7 @@ const Body = z.object({
 export function POST(req: Request) {
   return withAdmin(req, async (me) => {
     const { email, role } = Body.parse(await readJson(req));
-    const { token, invite } = createInvite(me.id, { email: email || null, role });
+    const { token, invite } = await createInvite(me.id, { email: email || null, role });
     return json({ url: `${appOrigin()}/invite/${token}`, invite: { ...invite, tokenHash: undefined } });
   });
 }

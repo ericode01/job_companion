@@ -1,9 +1,7 @@
 import crypto from "node:crypto";
-import fs from "node:fs";
-import path from "node:path";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
-import { dataDir, getSettings, TailoredResumeSchema, type ResumeChange, type ResumeSource, type TailoredResume } from "@jd/core";
-import { getDb, schema } from "@jd/core/db";
+import { fileStore, getSettings, TailoredResumeSchema, type ResumeChange, type ResumeSource, type TailoredResume } from "@jd/core";
+import { getDb, one, returned, schema } from "@jd/core/db";
 import { assertBudget, forModel, parseStructured, recordMessageUsage } from "@jd/llm";
 import { and, desc, eq } from "drizzle-orm";
 import { getJobAnalysis } from "./job";
@@ -126,20 +124,21 @@ export function applyTailoring(master: ResumeSource, tailored: TailoredResume): 
 /** Writes a tailored resume for one job and renders its PDF. */
 export async function tailorResume(userId: number, jobId: number, opts: { background: boolean }): Promise<TailorResult> {
   const db = getDb();
-  const master = currentMasterResume(userId);
+  const master = await currentMasterResume(userId);
   if (!master?.source) throw new NonRetryableError("Upload and parse your master resume first.");
-  const row = db
-    .select({ job: schema.job, company: schema.company })
-    .from(schema.job)
-    .innerJoin(schema.company, eq(schema.company.id, schema.job.companyId))
-    .where(eq(schema.job.id, jobId))
-    .get();
+  const row = await one(
+    db
+      .select({ job: schema.job, company: schema.company })
+      .from(schema.job)
+      .innerJoin(schema.company, eq(schema.company.id, schema.job.companyId))
+      .where(eq(schema.job.id, jobId)),
+  );
   if (!row) throw new NonRetryableError(`Job ${jobId} not found`);
-  assertBudget(opts);
+  await assertBudget(opts);
 
   const masterSource = master.source;
-  const analysis = getJobAnalysis(jobId)?.data;
-  const setting = getSettings("ai").models.writing;
+  const analysis = (await getJobAnalysis(jobId))?.data;
+  const setting = (await getSettings("ai")).models.writing;
   const { client, model } = forModel(setting);
   const response = await client.messages.create({
     model,
@@ -161,7 +160,7 @@ export async function tailorResume(userId: number, jobId: number, opts: { backgr
     ],
     output_config: { format: zodOutputFormat(TailoredResumeSchema) },
   });
-  recordMessageUsage("tailor_resume", setting, response);
+  await recordMessageUsage("tailor_resume", setting, response);
   assertUsableStop(response, "tailor the resume");
   let tailored: TailoredResume;
   try {
@@ -172,10 +171,8 @@ export async function tailorResume(userId: number, jobId: number, opts: { backgr
   }
 
   const { source, warnings, changes } = applyTailoring(masterSource, tailored);
-  const dir = path.join(dataDir(), "files", "resumes", String(userId));
-  fs.mkdirSync(dir, { recursive: true });
-  const filePath = path.join(dir, `tailored-${jobId}-${crypto.randomUUID()}.pdf`);
-  fs.writeFileSync(filePath, await renderResumePdf(source));
+  const filePath = `resumes/${userId}/tailored-${jobId}-${crypto.randomUUID()}.pdf`;
+  await fileStore().put(filePath, await renderResumePdf(source), "application/pdf");
 
   const name = (source.contact.name ?? "Resume").replace(/[^\w .-]+/g, "").trim();
   const values = {
@@ -194,36 +191,38 @@ export async function tailorResume(userId: number, jobId: number, opts: { backgr
     truthWarnings: warnings,
     updatedAt: new Date(),
   };
-  const existing = db
-    .select()
-    .from(schema.resume)
-    .where(and(eq(schema.resume.userId, userId), eq(schema.resume.kind, "tailored"), eq(schema.resume.jobId, jobId)))
-    .orderBy(desc(schema.resume.id))
-    .get();
-  const resume = existing
-    ? db.update(schema.resume).set(values).where(eq(schema.resume.id, existing.id)).returning().get()
-    : db.insert(schema.resume).values(values).returning().get();
-  if (existing && existing.filePath !== filePath && fs.existsSync(existing.filePath)) fs.rmSync(existing.filePath, { force: true });
-  return { resume, warnings };
-}
-
-export function tailoredResumeFor(userId: number, jobId: number): Resume | null {
-  return (
-    getDb()
+  const existing = await one(
+    db
       .select()
       .from(schema.resume)
       .where(and(eq(schema.resume.userId, userId), eq(schema.resume.kind, "tailored"), eq(schema.resume.jobId, jobId)))
-      .orderBy(desc(schema.resume.id))
-      .get() ?? null
+      .orderBy(desc(schema.resume.id)),
+  );
+  const resume = existing
+    ? await returned(db.update(schema.resume).set(values).where(eq(schema.resume.id, existing.id)).returning())
+    : await returned(db.insert(schema.resume).values(values).returning());
+  if (existing && existing.filePath !== filePath) await fileStore().remove(existing.filePath);
+  return { resume, warnings };
+}
+
+export async function tailoredResumeFor(userId: number, jobId: number): Promise<Resume | null> {
+  return (
+    await one(
+      getDb()
+        .select()
+        .from(schema.resume)
+        .where(and(eq(schema.resume.userId, userId), eq(schema.resume.kind, "tailored"), eq(schema.resume.jobId, jobId)))
+        .orderBy(desc(schema.resume.id)),
+    ) ?? null
   );
 }
 
 /** Re-renders the PDF after you edit a tailored resume by hand. */
 export async function rerenderResume(resumeId: number): Promise<void> {
-  const r = getResume(resumeId);
+  const r = await getResume(resumeId);
   if (!r?.source || r.kind !== "tailored") return;
-  fs.writeFileSync(r.filePath, await renderResumePdf(r.source));
-  getDb().update(schema.resume).set({ parsedText: resumeToText(r.source), status: "approved", updatedAt: new Date() }).where(eq(schema.resume.id, resumeId)).run();
+  await fileStore().put(r.filePath, await renderResumePdf(r.source), "application/pdf");
+  await getDb().update(schema.resume).set({ parsedText: resumeToText(r.source), status: "approved", updatedAt: new Date() }).where(eq(schema.resume.id, resumeId));
 }
 
 export { resumeForPrompt };

@@ -14,13 +14,13 @@ type Ctx = { params: Promise<{ id: string }> };
  */
 export function GET(req: Request, { params }: Ctx) {
   return withUser(req, async (user) => {
-    const d = getDashboard(user.id, Number((await params).id));
+    const d = await getDashboard(user.id, Number((await params).id));
     if (!d) return notFound();
     const q = new URL(req.url).searchParams;
     const sinceParam = q.get("since");
     const since = sinceParam && !Number.isNaN(Date.parse(sinceParam)) ? new Date(sinceParam) : null;
     const { results, newSince, fit } = await dashboardResults(user, d, { markViewed: q.get("view") === "1", since });
-    return json({ search: { ...d, name: dashboardName(d) }, results, newSince, fit, crawl: latestCrawl() });
+    return json({ search: { ...d, name: dashboardName(d) }, results, newSince, fit, crawl: await latestCrawl() });
   });
 }
 
@@ -35,10 +35,10 @@ const Patch = z.object({
 export function PATCH(req: Request, { params }: Ctx) {
   return withUser(req, async (user) => {
     const id = Number((await params).id);
-    if (!getDashboard(user.id, id)) return notFound();
+    if (!await getDashboard(user.id, id)) return notFound();
     const { archived, ...rest } = Patch.parse(await readJson(req));
     const set = { ...rest, ...(archived === undefined ? {} : { archivedAt: archived ? new Date() : null }) };
-    if (Object.keys(set).length) getDb().update(schema.savedSearch).set(set).where(eq(schema.savedSearch.id, id)).run();
+    if (Object.keys(set).length) await getDb().update(schema.savedSearch).set(set).where(eq(schema.savedSearch.id, id));
     return json({ ok: true });
   });
 }
@@ -47,10 +47,10 @@ export function PATCH(req: Request, { params }: Ctx) {
 export function DELETE(req: Request, { params }: Ctx) {
   return withUser(req, async (user) => {
     const id = Number((await params).id);
-    if (!getDashboard(user.id, id)) return notFound();
+    if (!await getDashboard(user.id, id)) return notFound();
     const db = getDb();
-    db.update(schema.application).set({ searchId: null }).where(eq(schema.application.searchId, id)).run();
-    db.delete(schema.savedSearch).where(eq(schema.savedSearch.id, id)).run();
+    await db.update(schema.application).set({ searchId: null }).where(eq(schema.application.searchId, id));
+    await db.delete(schema.savedSearch).where(eq(schema.savedSearch.id, id));
     return json({ ok: true });
   });
 }

@@ -1,11 +1,10 @@
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import type Anthropic from "@anthropic-ai/sdk";
 import type { FormQuestion } from "@jd/core";
 import { beforeAll, describe, expect, it, vi } from "vitest";
+import { one, returned } from "@jd/core/db";
 
-process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "jd-apply-"));
+const { useTestDb } = await import("@jd/core/testing");
+await useTestDb("jd-apply-");
 
 const parseQueue: unknown[] = [];
 const calls: Anthropic.MessageCreateParams[] = [];
@@ -35,12 +34,12 @@ let applicationId: number;
 let userId: number;
 let otherId: number;
 
-beforeAll(() => {
+beforeAll(async () => {
   const db = getDb();
-  userId = db.insert(schema.user).values({ email: "sam@example.com", name: "Sam", passwordHash: "x", role: "member" }).returning().get().id;
-  otherId = db.insert(schema.user).values({ email: "alex@example.com", name: "Alex", passwordHash: "x", role: "member" }).returning().get().id;
-  const companyId = db.insert(schema.company).values({ name: "Acme", atsType: "lever", atsSlug: "acme", source: "manual" }).returning().get().id;
-  storeCompanyJobs(companyId, "lever", [
+  userId = (await returned(db.insert(schema.user).values({ email: "sam@example.com", name: "Sam", passwordHash: "x", role: "member" }).returning())).id;
+  otherId = (await returned(db.insert(schema.user).values({ email: "alex@example.com", name: "Alex", passwordHash: "x", role: "member" }).returning())).id;
+  const companyId = (await returned(db.insert(schema.company).values({ name: "Acme", atsType: "lever", atsSlug: "acme", source: "manual" }).returning())).id;
+  await storeCompanyJobs(companyId, "lever", [
     {
       externalId: "a4ca6614-e302-48f9-800c-fc9903ea5b5a",
       title: "Staff Engineer",
@@ -56,9 +55,9 @@ beforeAll(() => {
       postedAt: new Date(),
     },
   ]);
-  jobId = db.select().from(schema.job).get()!.id;
-  db.insert(schema.profile).values({ userId, name: "SAM Q RIVERA", email: "sam@example.com", phone: "555-0100", links: { linkedin: "https://linkedin.com/in/sam" } }).run();
-  applicationId = apply.prepareApplication(userId, jobId, { coverLetter: "no" }).id;
+  jobId = (await one(db.select().from(schema.job)))!.id;
+  await db.insert(schema.profile).values({ userId, name: "SAM Q RIVERA", email: "sam@example.com", phone: "555-0100", links: { linkedin: "https://linkedin.com/in/sam" } });
+  applicationId = (await apply.prepareApplication(userId, jobId, { coverLetter: "no" })).id;
 });
 
 describe("rules", () => {
@@ -88,18 +87,18 @@ describe("grounding", () => {
 });
 
 describe("answer bank", () => {
-  it("seeds defaults once and matches known wordings", () => {
-    const first = apply.listAnswers(userId).length;
+  it("seeds defaults once and matches known wordings", async () => {
+    const first = (await apply.listAnswers(userId)).length;
     expect(first).toBeGreaterThanOrEqual(7);
-    expect(apply.listAnswers(userId).length).toBe(first);
-    expect(apply.findExactAnswer(userId, "Are you legally authorized to work in the country where this job is located?*", jobId)?.answer).toBe("Yes");
+    expect((await apply.listAnswers(userId)).length).toBe(first);
+    expect((await apply.findExactAnswer(userId, "Are you legally authorized to work in the country where this job is located?*", jobId))?.answer).toBe("Yes");
   });
 
-  it("job-scoped answers win for that job only", () => {
-    apply.saveAnswer(userId, { question: "What are your salary expectations?", answer: "$250k", category: "salary", scope: "global" });
-    apply.saveAnswer(userId, { question: "What are your salary expectations?", answer: "$300k", category: "salary", scope: "job", jobId });
-    expect(apply.findExactAnswer(userId, "What are your salary expectations?", jobId)?.answer).toBe("$300k");
-    expect(apply.findExactAnswer(userId, "What are your salary expectations?", null)?.answer).toBe("$250k");
+  it("job-scoped answers win for that job only", async () => {
+    await apply.saveAnswer(userId, { question: "What are your salary expectations?", answer: "$250k", category: "salary", scope: "global" });
+    await apply.saveAnswer(userId, { question: "What are your salary expectations?", answer: "$300k", category: "salary", scope: "job", jobId });
+    expect((await apply.findExactAnswer(userId, "What are your salary expectations?", jobId))?.answer).toBe("$300k");
+    expect((await apply.findExactAnswer(userId, "What are your salary expectations?", null))?.answer).toBe("$250k");
   });
 });
 
@@ -123,7 +122,7 @@ describe("resolveQuestions", () => {
 
   it("uses Claude for the rest: semantic bank match, drafts, and inbox for unknown recurring facts", async () => {
     calls.length = 0;
-    const bank = apply.listAnswers(userId);
+    const bank = await apply.listAnswers(userId);
     const workAuth = bank.find((b) => b.category === "work_auth")!;
     parseQueue.push({
       items: [
@@ -145,16 +144,16 @@ describe("resolveQuestions", () => {
     expect(answers[2]).toMatchObject({ value: null, status: "needs_user", category: "relocation" });
     expect(answers[3]).toMatchObject({ value: null, status: "needs_user" }); // invented option rejected
     expect(inboxAdded).toBe(2);
-    expect(apply.listInbox(userId).map((i) => i.question)).toEqual(expect.arrayContaining(["Are you open to relocating to New York?", "How did you hear about us?"]));
+    expect((await apply.listInbox(userId)).map((i) => i.question)).toEqual(expect.arrayContaining(["Are you open to relocating to New York?", "How did you hear about us?"]));
     // The new wording is remembered for next time.
-    expect(apply.findExactAnswer(userId, "Can you legally work for us in the US without restriction?", jobId)?.id).toBe(workAuth.id);
+    expect((await apply.findExactAnswer(userId, "Can you legally work for us in the US without restriction?", jobId))?.id).toBe(workAuth.id);
   });
 
-  it("answering an inbox item saves it and closes the item", () => {
-    const item = apply.listInbox(userId).find((i) => i.category === "relocation")!;
-    apply.answerInboxItem(userId, item.id, "Yes", "global");
-    expect(apply.listInbox(userId).some((i) => i.id === item.id)).toBe(false);
-    expect(apply.findExactAnswer(userId, "Are you open to relocating to New York?", jobId)?.answer).toBe("Yes");
+  it("answering an inbox item saves it and closes the item", async () => {
+    const item = (await apply.listInbox(userId)).find((i) => i.category === "relocation")!;
+    await apply.answerInboxItem(userId, item.id, "Yes", "global");
+    expect((await apply.listInbox(userId)).some((i) => i.id === item.id)).toBe(false);
+    expect((await apply.findExactAnswer(userId, "Are you open to relocating to New York?", jobId))?.answer).toBe("Yes");
   });
 });
 
@@ -171,31 +170,31 @@ describe("packet, URL matching, and pairing", () => {
     expect(Buffer.from(bytes.subarray(0, 5)).toString()).toBe("%PDF-");
   });
 
-  it("matches application URLs to jobs", () => {
-    expect(apply.matchJobByUrl("https://jobs.lever.co/acme/a4ca6614-e302-48f9-800c-fc9903ea5b5a/apply")).toEqual({ jobId });
-    expect(apply.matchJobByUrl("https://jobs.lever.co/other/unknown")).toBeNull();
-    expect(apply.matchJobByUrl("not a url")).toBeNull();
+  it("matches application URLs to jobs", async () => {
+    expect(await apply.matchJobByUrl("https://jobs.lever.co/acme/a4ca6614-e302-48f9-800c-fc9903ea5b5a/apply")).toEqual({ jobId });
+    expect(await apply.matchJobByUrl("https://jobs.lever.co/other/unknown")).toBeNull();
+    expect(await apply.matchJobByUrl("not a url")).toBeNull();
   });
 
-  it("maps each pairing token to its person, and rotates it", () => {
-    const { token } = apply.getExtensionState(userId);
-    const { token: theirs } = apply.getExtensionState(otherId);
-    expect(apply.userForExtensionToken(token)).toBe(userId);
-    expect(apply.userForExtensionToken(theirs)).toBe(otherId);
-    expect(apply.userForExtensionToken("nope")).toBeNull();
-    apply.rotateExtensionToken(userId);
-    expect(apply.userForExtensionToken(token)).toBeNull();
-    expect(apply.userForExtensionToken(theirs)).toBe(otherId);
+  it("maps each pairing token to its person, and rotates it", async () => {
+    const { token } = await apply.getExtensionState(userId);
+    const { token: theirs } = await apply.getExtensionState(otherId);
+    expect(await apply.userForExtensionToken(token)).toBe(userId);
+    expect(await apply.userForExtensionToken(theirs)).toBe(otherId);
+    expect(await apply.userForExtensionToken("nope")).toBeNull();
+    await apply.rotateExtensionToken(userId);
+    expect(await apply.userForExtensionToken(token)).toBeNull();
+    expect(await apply.userForExtensionToken(theirs)).toBe(otherId);
   });
 
   it("keeps one person's answers, inbox and applications away from another", async () => {
-    apply.saveAnswer(userId, { question: "Preferred pronouns?", answer: "they/them", category: "custom", scope: "global" });
-    expect(apply.findExactAnswer(otherId, "Preferred pronouns?", jobId)).toBeNull();
-    expect(apply.listInbox(otherId)).toEqual([]);
-    expect(apply.getApplication(otherId, applicationId)).toBeNull();
+    await apply.saveAnswer(userId, { question: "Preferred pronouns?", answer: "they/them", category: "custom", scope: "global" });
+    expect(await apply.findExactAnswer(otherId, "Preferred pronouns?", jobId)).toBeNull();
+    expect(await apply.listInbox(otherId)).toEqual([]);
+    expect(await apply.getApplication(otherId, applicationId)).toBeNull();
     expect(await apply.buildPacket(otherId, applicationId)).toBeNull();
     // Each person gets their own starting answers, not someone else's edits.
-    expect(apply.listAnswers(otherId).some((a) => a.question === "Preferred pronouns?")).toBe(false);
+    expect((await apply.listAnswers(otherId)).some((a) => a.question === "Preferred pronouns?")).toBe(false);
   });
 });
 

@@ -16,15 +16,15 @@ const Patch = z.object({
 
 export function PATCH(req: Request, { params }: Ctx) {
   return withUser(req, async (user) => {
-    const conn = getConnection(user.id, Number((await params).id));
+    const conn = await getConnection(user.id, Number((await params).id));
     if (!conn || !conn.secret) return notFound();
     const body = Patch.parse(await readJson(req));
-    if (body.paused !== undefined) updateConnection(conn.id, { status: body.paused ? "paused" : "active", lastError: null });
+    if (body.paused !== undefined) await updateConnection(conn.id, { status: body.paused ? "paused" : "active", lastError: null });
     if (body.backfillDays !== undefined && body.backfillDays !== conn.backfillDays) {
-      updateConnection(conn.id, { backfillDays: body.backfillDays, backfillDone: false, cursor: {} });
+      await updateConnection(conn.id, { backfillDays: body.backfillDays, backfillDone: false, cursor: {} });
     }
-    if (body.paused === false || body.backfillDays !== undefined) enqueueSync(conn, true);
-    return json(toPublic(getConnection(user.id, conn.id)!));
+    if (body.paused === false || body.backfillDays !== undefined) await enqueueSync(conn, true);
+    return json(toPublic((await getConnection(user.id, conn.id))!));
   });
 }
 

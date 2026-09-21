@@ -5,7 +5,7 @@ type Ctx = { params: Promise<{ id: string }> };
 
 export function DELETE(req: Request, { params }: Ctx) {
   return withAdmin(req, async () => {
-    revokeInvite(Number((await params).id));
+    await revokeInvite(Number((await params).id));
     return json({ ok: true });
   });
 }

@@ -4,12 +4,20 @@
  * while it runs. Started by `pnpm dev`; run alone with `pnpm worker`.
  */
 import { getSettings, loadEnv, pruneSessions, refreshModelPrices } from "@jd/core";
+import { initDb } from "@jd/core/db";
 import { dueDigestUsers, followedSearches, runDigest } from "@jd/digest";
 import { dueConnections, enqueueSync, syncConnection } from "@jd/mail";
 import { briefFor, discoveryDue, enqueueDiscovery, enqueueFitScores, registerTaskHandler, startWorker } from "@jd/research";
 import { hydrateForFilter, runCrawl, runSearch, staleCompanies } from "@jd/sources";
 
 loadEnv();
+// Every background job here now talks to a database over the network. One that fails while the
+// database is briefly unreachable should be logged, not end the process: under `pnpm serve` the
+// worker exiting takes the web server down with it.
+process.on("unhandledRejection", (err) => {
+  console.error("[worker] unhandled:", err instanceof Error ? err.message : err);
+});
+await initDb();
 registerTaskHandler("sync_mailbox", async (p) => {
   const summary = await syncConnection(Number(p.connectionId));
   if (summary?.candidates) {
@@ -19,27 +27,27 @@ registerTaskHandler("sync_mailbox", async (p) => {
   }
   return summary;
 });
-startWorker({ pollMs: 1000 });
+await startWorker({ pollMs: 1000 });
 console.log("worker started");
 
 let crawling = false;
 
 /** Refreshes stale boards, then queues fit scoring for searches you follow. */
 async function refreshIfStale() {
-  if (crawling || !getSettings("sources").autoRefresh) return;
-  const stale = staleCompanies();
+  if (crawling || !(await getSettings("sources")).autoRefresh) return;
+  const stale = await staleCompanies();
   if (stale.length === 0) return;
   crawling = true;
   console.log(`[refresh] ${stale.length} companies are stale`);
   try {
     await runCrawl({ trigger: "schedule" });
-    for (const search of followedSearches()) {
+    for (const search of await followedSearches()) {
       if (!search.userId) continue;
       await hydrateForFilter(search.filter, search.userId);
-      const results = runSearch(search.id, search.filter, search.userId);
-      const queued = enqueueFitScores(
+      const results = await runSearch(search.id, search.filter, search.userId);
+      const queued = await enqueueFitScores(
         search.userId,
-        results.map((r) => r.jobId).slice(0, getSettings("research").maxScoredPerSearch),
+        results.map((r) => r.jobId).slice(0, (await getSettings("research")).maxScoredPerSearch),
         true,
       );
       if (queued) console.log(`[refresh] queued ${queued} fit scores for "${search.rawQuery}"`);
@@ -52,36 +60,36 @@ async function refreshIfStale() {
 }
 
 /** Once a day, if you asked for it, look for companies that aren't on the list yet. */
-function discoverIfDue() {
-  if (!discoveryDue()) return;
-  const [search] = followedSearches();
+async function discoverIfDue() {
+  if (!await discoveryDue()) return;
+  const [search] = await followedSearches();
   if (!search) return;
-  enqueueDiscovery(briefFor(search.filter, search.rawQuery), "schedule", search.id);
+  await enqueueDiscovery(briefFor(search.filter, search.rawQuery), "schedule", search.id);
   console.log(`[discover] looking for companies like "${search.rawQuery}"`);
 }
 
 async function digestIfDue() {
-  for (const userId of dueDigestUsers()) {
+  for (const userId of await dueDigestUsers()) {
     const outcome = await runDigest(userId);
     console.log(`[digest] user ${userId}: ${outcome.status}${outcome.reason ? `: ${outcome.reason}` : ` — ${outcome.subject}`}`);
   }
 }
 
 /** Mailboxes are checked on their own interval (Admin → Mailbox sync), independent of job boards. */
-function queueMailboxChecks() {
-  for (const conn of dueConnections()) enqueueSync(conn, false);
+async function queueMailboxChecks() {
+  for (const conn of await dueConnections()) await enqueueSync(conn, false);
 }
-queueMailboxChecks();
-setInterval(queueMailboxChecks, 60_000);
+await queueMailboxChecks();
+setInterval(() => void queueMailboxChecks(), 60_000);
 
 /** Model prices move, and every spend cap depends on them. The committed snapshot is the floor. */
 void refreshModelPrices();
 setInterval(() => void refreshModelPrices(), 24 * 3_600_000);
 
 const tick = async () => {
-  pruneSessions();
+  await pruneSessions();
   await refreshIfStale();
-  discoverIfDue();
+  await discoverIfDue();
   await digestIfDue();
 };
 void tick();

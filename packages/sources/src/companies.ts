@@ -1,4 +1,4 @@
-import { getDb, schema } from "@jd/core/db";
+import { getDb, returned, schema } from "@jd/core/db";
 import type { AtsType } from "@jd/core";
 import { getSettings } from "@jd/core";
 import { adapters, boardName, detectAts } from "./adapters";
@@ -14,17 +14,17 @@ export interface SeedCompany {
 }
 
 /** Inserts seed rows, skipping (ats, slug) pairs that already exist. Returns inserted count. */
-export function importSeedCompanies(rows: SeedCompany[]): number {
+export async function importSeedCompanies(rows: SeedCompany[]): Promise<number> {
   const db = getDb();
   let inserted = 0;
-  db.transaction((tx) => {
+  await db.transaction(async (tx) => {
     for (const r of rows) {
-      const res = tx
+      const added = await tx
         .insert(schema.company)
         .values({ name: r.name, domain: r.domain ?? null, atsType: r.ats, atsSlug: r.slug, source: "seed" })
         .onConflictDoNothing()
-        .run();
-      inserted += res.changes;
+        .returning({ id: schema.company.id });
+      inserted += added.length;
     }
   });
   return inserted;
@@ -51,7 +51,7 @@ export async function addCompanyFromUrl(url: string, name?: string) {
   }
   let result;
   try {
-    result = await adapters[hit.type].listJobs(hit.slug, { maxJobs: getSettings("sources").maxJobsPerBoard });
+    result = await adapters[hit.type].listJobs(hit.slug, { maxJobs: (await getSettings("sources")).maxJobsPerBoard });
   } catch (err) {
     if (err instanceof HttpError && err.status === 404) {
       throw new AddCompanyError(`No ${hit.type} job board found for "${hit.slug}".`);
@@ -60,16 +60,17 @@ export async function addCompanyFromUrl(url: string, name?: string) {
   }
   const db = getDb();
   const displayName = name?.trim() || result.companyName || boardName(hit.type, hit.slug);
-  const row = db
-    .insert(schema.company)
-    .values({ name: displayName, domain, atsType: hit.type, atsSlug: hit.slug, source: "manual", watch: true })
-    .onConflictDoUpdate({
-      target: [schema.company.atsType, schema.company.atsSlug],
-      set: { watch: true, enabled: true },
-    })
-    .returning()
-    .get();
-  const counts = storeCompanyJobs(row.id, hit.type, result.jobs);
+  const row = await returned(
+    db
+      .insert(schema.company)
+      .values({ name: displayName, domain, atsType: hit.type, atsSlug: hit.slug, source: "manual", watch: true })
+      .onConflictDoUpdate({
+        target: [schema.company.atsType, schema.company.atsSlug],
+        set: { watch: true, enabled: true },
+      })
+      .returning(),
+  );
+  const counts = await storeCompanyJobs(row.id, hit.type, result.jobs);
   return { company: row, ...counts };
 }
 

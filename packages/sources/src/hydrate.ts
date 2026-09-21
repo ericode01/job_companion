@@ -1,5 +1,5 @@
 import { getSettings, type NormalizedJob, type SearchFilter } from "@jd/core";
-import { getDb, schema } from "@jd/core/db";
+import { getDb, one, schema } from "@jd/core/db";
 import { and, count, eq, getTableColumns, inArray, isNull, like, or, type SQL } from "drizzle-orm";
 import { adapters } from "./adapters";
 import { hashJob } from "./crawl";
@@ -20,13 +20,12 @@ const { company, job } = schema;
 
 type PendingJob = typeof job.$inferSelect & { atsSlug: string; companyName: string };
 
-function pendingRows(where?: SQL): PendingJob[] {
-  return getDb()
+async function pendingRows(where?: SQL): Promise<PendingJob[]> {
+  return await getDb()
     .select({ ...getTableColumns(job), atsSlug: company.atsSlug, companyName: company.name })
     .from(job)
     .innerJoin(company, eq(company.id, job.companyId))
-    .where(and(eq(job.needsDetail, true), where))
-    .all();
+    .where(and(eq(job.needsDetail, true), where));
 }
 
 function toNormalized(r: PendingJob): NormalizedJob {
@@ -54,7 +53,7 @@ function toNormalized(r: PendingJob): NormalizedJob {
 export async function hydrateJobs(rows: PendingJob[]): Promise<number> {
   if (!rows.length) return 0;
   const db = getDb();
-  const { concurrency, perHostConcurrency } = getSettings("sources");
+  const { concurrency, perHostConcurrency } = await getSettings("sources");
   setPerHostConcurrency(perHostConcurrency);
   const sem = new Semaphore(concurrency);
   let filled = 0;
@@ -65,12 +64,12 @@ export async function hydrateJobs(rows: PendingJob[]): Promise<number> {
         const hydrate = adapters[r.atsType].hydrate;
         if (!hydrate) {
           // Flagged by mistake — nothing more to fetch, so stop asking.
-          db.update(job).set({ needsDetail: false }).where(eq(job.id, r.id)).run();
+          await db.update(job).set({ needsDetail: false }).where(eq(job.id, r.id));
           return;
         }
         try {
           const full = await hydrate(r.atsSlug, toNormalized(r));
-          db.update(job)
+          await db.update(job)
             .set({
               url: full.url,
               locations: full.locations,
@@ -83,8 +82,7 @@ export async function hydrateJobs(rows: PendingJob[]): Promise<number> {
               needsDetail: full.needsDetail ?? false,
               contentHash: hashJob(full),
             })
-            .where(eq(job.id, r.id))
-            .run();
+            .where(eq(job.id, r.id));
           filled++;
         } catch (err) {
           console.warn(`[hydrate] job ${r.id} (${r.atsType}): ${err instanceof Error ? err.message : String(err)}`);
@@ -95,13 +93,13 @@ export async function hydrateJobs(rows: PendingJob[]): Promise<number> {
   return filled;
 }
 
-export function hydrateByIds(jobIds: number[]): Promise<number> {
-  return jobIds.length ? hydrateJobs(pendingRows(inArray(job.id, jobIds))) : Promise.resolve(0);
+export async function hydrateByIds(jobIds: number[]): Promise<number> {
+  return jobIds.length ? hydrateJobs(await pendingRows(inArray(job.id, jobIds))) : Promise.resolve(0);
 }
 
 /** Called when you open a job, so the description is there for analysis and fit scoring. */
-export function ensureJobDetail(jobId: number): Promise<number> {
-  return hydrateByIds([jobId]);
+export async function ensureJobDetail(jobId: number): Promise<number> {
+  return await hydrateByIds([jobId]);
 }
 
 /**
@@ -110,7 +108,7 @@ export function ensureJobDetail(jobId: number): Promise<number> {
  * "staff software engineer" search that is tens of jobs out of thousands, not thousands.
  */
 export async function hydrateForFilter(filter: SearchFilter, userId?: number | null, limit = 300): Promise<number> {
-  const { excludedCompanies, excludedTitleKeywords } = exclusionsFor(userId);
+  const { excludedCompanies, excludedTitleKeywords } = await exclusionsFor(userId);
   const narrowOn = filter.levelKeywords.length ? filter.levelKeywords : filter.roleKeywords;
   const titleClause = narrowOn.length
     ? or(...narrowOn.map((k) => like(job.titleNormalized, `%${normalizeTitle(k)}%`)))
@@ -118,19 +116,22 @@ export async function hydrateForFilter(filter: SearchFilter, userId?: number | n
 
   // Location can't be judged before hydration, so let it pass here and leave it to runSearch.
   const withoutLocation: SearchFilter = { ...filter, locations: [], includeRemoteUS: true, remoteOnly: false };
-  const wanted = pendingRows(and(isNull(job.closedAt), titleClause)).filter(
+  const wanted = (await pendingRows(and(isNull(job.closedAt), titleClause))).filter(
     (r) => matchJob(r, withoutLocation, { excludedCompanies, excludedTitleKeywords }).pass,
   );
   return hydrateJobs(wanted.slice(0, limit));
 }
 
 /** Open jobs still missing a description. Shown on the Companies page. */
-export function pendingDetailCount(): number {
+export async function pendingDetailCount(): Promise<number> {
   return (
-    getDb()
-      .select({ n: count() })
-      .from(job)
-      .where(and(eq(job.needsDetail, true), isNull(job.closedAt)))
-      .get()?.n ?? 0
+    (
+      await one(
+        getDb()
+          .select({ n: count() })
+          .from(job)
+          .where(and(eq(job.needsDetail, true), isNull(job.closedAt))),
+      )
+    )?.n ?? 0
   );
 }

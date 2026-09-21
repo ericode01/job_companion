@@ -1,5 +1,5 @@
 import { decryptSecret, encryptSecret, enqueueTask, getSettings } from "@jd/core";
-import { getDb, schema } from "@jd/core/db";
+import { getDb, one, returned, schema } from "@jd/core/db";
 import { and, eq, inArray } from "drizzle-orm";
 import { revokeGoogleToken } from "./gmail";
 import { type ImapLogin, testImapLogin } from "./imap";
@@ -37,77 +37,81 @@ export function toPublic(c: Connection): PublicConnection {
   };
 }
 
-export function getConnection(userId: number, id: number): Connection | null {
+export async function getConnection(userId: number, id: number): Promise<Connection | null> {
   return (
-    getDb()
-      .select()
-      .from(schema.mailboxConnection)
-      .where(and(eq(schema.mailboxConnection.id, id), eq(schema.mailboxConnection.userId, userId)))
-      .get() ?? null
+    await one(
+      getDb()
+        .select()
+        .from(schema.mailboxConnection)
+        .where(and(eq(schema.mailboxConnection.id, id), eq(schema.mailboxConnection.userId, userId))),
+    ) ?? null
   );
 }
 
-export function listConnections(userId: number): Connection[] {
-  return getDb().select().from(schema.mailboxConnection).where(eq(schema.mailboxConnection.userId, userId)).orderBy(schema.mailboxConnection.id).all();
+export async function listConnections(userId: number): Promise<Connection[]> {
+  return await getDb().select().from(schema.mailboxConnection).where(eq(schema.mailboxConnection.userId, userId)).orderBy(schema.mailboxConnection.id);
 }
 
 /** Connected (not disconnected) mailboxes. */
-export function activeConnections(userId: number): Connection[] {
-  return listConnections(userId).filter((c) => c.secret);
+export async function activeConnections(userId: number): Promise<Connection[]> {
+  return (await listConnections(userId)).filter((c) => c.secret);
 }
 
-export function updateConnection(id: number, patch: Partial<Omit<Connection, "id" | "userId">>): void {
-  getDb().update(schema.mailboxConnection).set(patch).where(eq(schema.mailboxConnection.id, id)).run();
+export async function updateConnection(id: number, patch: Partial<Omit<Connection, "id" | "userId">>): Promise<void> {
+  await getDb().update(schema.mailboxConnection).set(patch).where(eq(schema.mailboxConnection.id, id));
 }
 
-function clampDays(days: number): number {
-  return Math.max(7, Math.min(getSettings("mailSync").maxBackfillDays, Math.round(days)));
+async function clampDays(days: number): Promise<number> {
+  return Math.max(7, Math.min((await getSettings("mailSync")).maxBackfillDays, Math.round(days)));
 }
 
 /** Adds or reconnects a mailbox. Reconnecting keeps what was already read. */
-function upsert(userId: number, values: { provider: "gmail" | "imap"; address: string; secret: string; imapHost?: string | null; imapPort?: number | null; backfillDays: number }): Connection {
+async function upsert(userId: number, values: { provider: "gmail" | "imap"; address: string; secret: string; imapHost?: string | null; imapPort?: number | null; backfillDays: number }): Promise<Connection> {
   const db = getDb();
-  const existing = db
-    .select()
-    .from(schema.mailboxConnection)
-    .where(and(eq(schema.mailboxConnection.userId, userId), eq(schema.mailboxConnection.address, values.address)))
-    .get();
+  const existing = await one(
+    db
+      .select()
+      .from(schema.mailboxConnection)
+      .where(and(eq(schema.mailboxConnection.userId, userId), eq(schema.mailboxConnection.address, values.address))),
+  );
   const sealed = encryptSecret(values.secret);
   if (existing) {
     const sameServer = existing.provider === values.provider && (existing.imapHost ?? null) === (values.imapHost ?? null);
-    return db
-      .update(schema.mailboxConnection)
-      .set({
+    return await returned(
+      db
+        .update(schema.mailboxConnection)
+        .set({
+          provider: values.provider,
+          secret: sealed,
+          imapHost: values.imapHost ?? null,
+          imapPort: values.imapPort ?? null,
+          status: "active",
+          lastError: null,
+          ...(sameServer ? {} : { cursor: {}, backfillDone: false, backfillDays: await clampDays(values.backfillDays) }),
+        })
+        .where(eq(schema.mailboxConnection.id, existing.id))
+        .returning(),
+    );
+  }
+  return await returned(
+    db
+      .insert(schema.mailboxConnection)
+      .values({
+        userId,
         provider: values.provider,
+        address: values.address,
         secret: sealed,
         imapHost: values.imapHost ?? null,
         imapPort: values.imapPort ?? null,
-        status: "active",
-        lastError: null,
-        ...(sameServer ? {} : { cursor: {}, backfillDone: false, backfillDays: clampDays(values.backfillDays) }),
+        backfillDays: await clampDays(values.backfillDays),
       })
-      .where(eq(schema.mailboxConnection.id, existing.id))
-      .returning()
-      .get();
-  }
-  return db
-    .insert(schema.mailboxConnection)
-    .values({
-      userId,
-      provider: values.provider,
-      address: values.address,
-      secret: sealed,
-      imapHost: values.imapHost ?? null,
-      imapPort: values.imapPort ?? null,
-      backfillDays: clampDays(values.backfillDays),
-    })
-    .returning()
-    .get();
+      .returning(),
+  );
 }
 
-export function saveGmailConnection(userId: number, input: { address: string; refreshToken: string; backfillDays: number }): Connection {
-  const conn = upsert(userId, { provider: "gmail", address: input.address.toLowerCase(), secret: input.refreshToken, backfillDays: input.backfillDays });
-  enqueueSync(conn, true);
+export async function saveGmailConnection(userId: number, input: { address: string; refreshToken: string; backfillDays: number }): Promise<Connection> {
+  const conn = await upsert(userId, { provider: "gmail", address: input.address.toLowerCase(), secret: input.refreshToken, backfillDays: input.backfillDays });
+  await enqueueSync(conn, true);
   return conn;
 }
 
@@ -123,8 +127,8 @@ export async function saveImapConnection(
 ): Promise<Connection> {
   const login: ImapLogin = { host: input.host.trim().toLowerCase(), port: input.port, user: input.address.trim(), password: input.password };
   if (!(login.host === FAKE_HOST && fakeMailAllowed())) await testImapLogin(login);
-  const conn = upsert(userId, { provider: "imap", address: input.address.trim().toLowerCase(), secret: input.password, imapHost: login.host, imapPort: login.port, backfillDays: input.backfillDays });
-  enqueueSync(conn, true);
+  const conn = await upsert(userId, { provider: "imap", address: input.address.trim().toLowerCase(), secret: input.password, imapHost: login.host, imapPort: login.port, backfillDays: input.backfillDays });
+  await enqueueSync(conn, true);
   return conn;
 }
 
@@ -133,7 +137,7 @@ export async function saveImapConnection(
  * emails stay on your applications unless you ask for them to be deleted too.
  */
 export async function disconnect(userId: number, id: number, purge: boolean): Promise<boolean> {
-  const conn = getConnection(userId, id);
+  const conn = await getConnection(userId, id);
   if (!conn) return false;
   if (conn.provider === "gmail" && conn.secret) {
     try {
@@ -144,37 +148,36 @@ export async function disconnect(userId: number, id: number, purge: boolean): Pr
   }
   const db = getDb();
   if (purge) {
-    db.delete(schema.mailboxConnection).where(eq(schema.mailboxConnection.id, id)).run();
+    await db.delete(schema.mailboxConnection).where(eq(schema.mailboxConnection.id, id));
   } else {
-    db.update(schema.mailboxConnection)
+    await db.update(schema.mailboxConnection)
       .set({ secret: "", status: "paused", progress: null, lastError: null })
-      .where(eq(schema.mailboxConnection.id, id))
-      .run();
+      .where(eq(schema.mailboxConnection.id, id));
   }
   return true;
 }
 
-export function enqueueSync(conn: Pick<Connection, "id" | "userId">, now: boolean): void {
-  enqueueTask("sync_mailbox", `mailbox:${conn.id}`, { userId: conn.userId, connectionId: conn.id }, { background: !now, priority: now ? 15 : 0 });
+export async function enqueueSync(conn: Pick<Connection, "id" | "userId">, now: boolean): Promise<void> {
+  await enqueueTask("sync_mailbox", `mailbox:${conn.id}`, { userId: conn.userId, connectionId: conn.id }, { background: !now, priority: now ? 15 : 0 });
 }
 
 /** Mailboxes whose next check is due (the worker's timer calls this every minute). */
-export function dueConnections(now = Date.now()): Connection[] {
-  const { enabled, intervalMinutes } = getSettings("mailSync");
+export async function dueConnections(now = Date.now()): Promise<Connection[]> {
+  const { enabled, intervalMinutes } = await getSettings("mailSync");
   if (!enabled) return [];
-  const active = getDb()
-    .select()
-    .from(schema.mailboxConnection)
-    .where(inArray(schema.mailboxConnection.status, ["active", "error"]))
-    .all()
-    .filter((c) => c.secret);
+  const active = (
+    await getDb()
+      .select()
+      .from(schema.mailboxConnection)
+      .where(inArray(schema.mailboxConnection.status, ["active", "error"]))
+  ).filter((c) => c.secret);
   const disabled = new Set(
-    getDb()
-      .select({ id: schema.user.id })
-      .from(schema.user)
-      .where(eq(schema.user.disabled, true))
-      .all()
-      .map((u) => u.id),
+    (
+      await getDb()
+        .select({ id: schema.user.id })
+        .from(schema.user)
+        .where(eq(schema.user.disabled, true))
+    ).map((u) => u.id),
   );
   return active.filter((c) => !disabled.has(c.userId) && (!c.lastSyncAt || now - c.lastSyncAt.getTime() >= intervalMinutes * 60_000));
 }

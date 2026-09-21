@@ -2,7 +2,7 @@ import { getDb, schema } from "@jd/core/db";
 import { and, eq } from "drizzle-orm";
 
 /** Finds the job an application page belongs to, from its URL. */
-export function matchJobByUrl(rawUrl: string): { jobId: number } | null {
+export async function matchJobByUrl(rawUrl: string): Promise<{ jobId: number } | null> {
   let url: URL;
   try {
     url = new URL(rawUrl);
@@ -56,12 +56,11 @@ export function matchJobByUrl(rawUrl: string): { jobId: number } | null {
   if (!ats || !externalId) return null;
 
   const db = getDb();
-  const rows = db
+  const rows = await db
     .select({ id: schema.job.id, slug: schema.company.atsSlug })
     .from(schema.job)
     .innerJoin(schema.company, eq(schema.company.id, schema.job.companyId))
-    .where(and(eq(schema.job.atsType, ats), eq(schema.job.externalId, externalId)))
-    .all();
+    .where(and(eq(schema.job.atsType, ats), eq(schema.job.externalId, externalId)));
   const sameSlug = (r: { slug: string }) =>
     !slug || r.slug.toLowerCase() === slug.toLowerCase() || (ats === "workday" && r.slug.toLowerCase().startsWith(`${slug.toLowerCase()}/`));
   const hit = rows.find(sameSlug) ?? (rows.length === 1 ? rows[0] : undefined);

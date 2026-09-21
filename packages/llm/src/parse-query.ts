@@ -61,11 +61,11 @@ export async function parseSearchQuery(
     warning,
   });
 
-  const setting = getSettings("ai").models.queryParse;
+  const setting = (await getSettings("ai")).models.queryParse;
   if (!hasKeyFor(setting)) return fallback("No API key set, so the query was parsed with built-in rules.");
 
   try {
-    assertBudget({ background: false });
+    await assertBudget({ background: false });
     const { client, model } = forModel(setting);
     const response = await client.messages.create({
       model,
@@ -79,7 +79,7 @@ export async function parseSearchQuery(
       ],
       output_config: { format: zodOutputFormat(SearchFilterSchema) },
     });
-    recordMessageUsage("query_parse", setting, response);
+    await recordMessageUsage("query_parse", setting, response);
     if (response.stop_reason === "refusal") return fallback("The AI parser declined, so built-in rules were used.");
     let f: SearchFilter;
     try {

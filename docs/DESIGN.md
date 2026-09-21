@@ -10,7 +10,7 @@ Status: v8 (2026-09-19). M0–M5 are built, plus the accounts/dashboards redesig
 | 2 | Show detailed info about each company and job | Claude researches the company: overview, product, funding, size and stage. Results are cached per company and cite their sources. |
 | 3 | Apply in close to one click | A Chrome extension prefills the ATS form and tailors the answers. **You always click Submit yourself.** |
 | - | Form factor | A web app (Next.js) plus a Chrome extension (MV3). Runs locally or hosted (§19) |
-| - | Stack | TypeScript everywhere, Claude API, SQLite, pnpm monorepo |
+| - | Stack | TypeScript everywhere, Claude API, Postgres (SQLite until v11, §24), pnpm monorepo |
 | - | Runtime | Local only in v1–M5; since v7, hostable for several people with accounts (§19) |
 | - | Location matching | Remote-US roles count as a match for a city search by default. You can turn this off for a single search or globally in Settings. |
 | - | Resume | One master resume. For any job, you can **tailor a resume** as an option (§6.4). |
@@ -45,8 +45,8 @@ Out of scope for v1: LinkedIn/Indeed scraping, submitting applications automatic
 │    discovery)         search, cache)      answer bank, tailoring)│
 │           │                 │                  │                 │
 │           └────────── packages/core ───────────┘                 │
-│                 (types, Drizzle schema, SQLite, job queue)       │
-│                         data/app.db, data/files/                 │
+│               (types, Drizzle schema, Postgres, job queue)       │
+│              Cloud SQL + a GCS bucket (local: docker, data/)     │
 └───────────────────────────────┬──────────────────────────────────┘
                                 │ HTTPS
           ATS public APIs ◄─────┴─────► Claude API (web_search / web_fetch tools)
@@ -64,12 +64,12 @@ packages/
   research/     company enrichment (Claude + tools), fit scoring
   apply/        form field model, answer bank, cover letter / answer tailoring
   llm/          thin Claude client: model routing, structured output, token/cost ledger
-data/           (gitignored) app.db, resumes, cached raw payloads
+data/           (gitignored) local file store (resumes, research notes) when GCS_BUCKET is unset
 ```
 
-The worker runs in-process with the Next.js server, using a simple SQLite-backed job queue. That way there is no Redis and everything starts with `pnpm dev`. A macOS `launchd` job can run `pnpm refresh` once a day.
+The worker runs in-process with the Next.js server, using a simple database-backed job queue. That way there is no Redis and everything starts with `pnpm dev`. A macOS `launchd` job can run `pnpm refresh` once a day.
 
-## 3. Data model (SQLite via Drizzle)
+## 3. Data model (Postgres via Drizzle; SQLite until v11)
 
 ```
 profile          (single row) name, email, phone, location, links{linkedin,github,site}
@@ -354,6 +354,7 @@ When a cap is reached, background work (crawl scoring, enrichment, digests) paus
 | 2026-09-18 | Newly supported job board systems | Switched on once for existing installs, recorded in `knownAts` so turning one back off sticks |
 | 2026-09-18 | Users | Several people with accounts; hosted over HTTPS; email + password; first account is admin, others by invite (§19) |
 | 2026-09-18 | Look and navigation | "AI companion" palette; one dashboard per search behind a header switcher; one combined daily email with a section per dashboard |
+| 2026-09-21 | Database and hosting | Postgres on Cloud SQL (private IP) with the app on a GCE VM in the same region; files in a GCS bucket; PGlite for tests, docker-compose Postgres for development (§24) |
 
 ## 14. Open questions
 None right now. New questions will be added here as they come up during the build.
@@ -514,7 +515,7 @@ Recurring questions nobody has answered go to the **Answers inbox**.
 |----------|----------|
 | Who uses it | Several people, each with an account. **Reverses the v1 "single user, local only" scope.** |
 | Where it runs | Hosted on a server over HTTPS. Local dev on 127.0.0.1 keeps working. |
-| Sign-in | Email + password (scrypt), server-side sessions in SQLite, httpOnly cookie |
+| Sign-in | Email + password (scrypt), server-side sessions in the database, httpOnly cookie |
 | Sign-up | The first account is the admin and inherits all existing data. Everyone else needs an invite link from the admin portal. |
 | Look | "AI companion": neutral surfaces, one indigo accent, green for pay/success, Plus Jakarta Sans |
 | Switching searches | One dashboard on screen; a switcher in the header lists the others and "+ New search" |
@@ -863,3 +864,91 @@ or trains. Every model offered in the admin list has zero-data-retention endpoin
 While this change was in flight, a test mock stopped covering the code under test and the suite made
 real, billed API calls. `test/no-network.ts` now replaces `fetch` in every test run, so a stale mock
 is a loud failure instead of an invoice.
+
+## 24. Postgres on Cloud SQL (v11)
+
+SQLite in-process tied the web app and the worker to one filesystem: one machine, a disk to back
+up, and no second process that could safely claim work. The app now runs on **Postgres** (Cloud SQL,
+private IP) with files in a **GCS bucket**, on a GCE VM in the same region. Local development uses
+the Postgres in `docker-compose.yml`; tests use PGlite.
+
+### The cost was async, not the schema
+
+The schema translated one-to-one (`timestamp_ms` → `timestamptz`, `json` → `jsonb`, 0/1 → `boolean`,
+autoincrement → identity) and the SQLite migrations were replaced by one Postgres baseline. The real
+work was that `better-sqlite3` answers synchronously and every Postgres driver doesn't: **169
+functions** became async, found by a codemod that rewrote the terminal `.all()/.get()/.run()` calls
+and then followed each newly async function to its callers until nothing changed.
+
+`getDb()` stayed synchronous (a pool connects on first query), so only queries gained `await`.
+`one()` replaces `.get()` and adds `LIMIT 1`, since `.get()` never read past the first row;
+`returned()` is for `INSERT … RETURNING`, which always yields one. Migrations run once at startup —
+`initDb()` from the worker and from `instrumentation.ts` — instead of on first query.
+
+### What compiled and was still wrong
+
+Each of these type-checked and passed the existing tests. Each now has a fix and a test that fails
+without it:
+
+- **NULL ordering.** SQLite sorts nulls first ascending, Postgres last. `staleCompanies()` orders by
+  `lastCrawledAt`, where null means never crawled — a new company would have waited behind every
+  other. Now `nulls first`; a company's jobs list gets `nulls last`.
+- **Aggregates as strings.** node-postgres returns `count(*)` (bigint) and `numeric` as strings, so
+  spend totals and counts need `.mapWith(Number)`.
+- **Epoch milliseconds in raw SQL.** One `sql` fragment compared `updated_at` with `Date.now() - …`,
+  valid only while times were numbers; it failed the whole dashboard. It's a typed `lt()` now, and a
+  scan found no other raw fragment interpolating a value.
+- **The task claim.** Selecting the top task then updating it was atomic only because SQLite had one
+  writer. `claimTask` locks with `FOR UPDATE SKIP LOCKED`; four processes racing over 200 tasks
+  claimed each exactly once.
+- **Look, then insert.** Synchronous code couldn't interleave, so "is this task already queued? if
+  not, add it" was safe. With awaits in between it isn't: four processes enqueueing the same 100 keys
+  left duplicates for 60 of them. A partial unique index on live tasks (`task_live_key_uq`, queued or
+  running only) makes it zero; `enqueueTask` inserts with `ON CONFLICT DO NOTHING` and returns
+  whichever task won. Other tables already had unique constraints doing this job.
+- **Migrating from two processes at once.** The web app and the worker both migrate at startup. On a
+  fresh database, or the first start after a new migration, all but one failed ("duplicate key"
+  creating the drizzle schema) — three of four, every run — and under `pnpm serve` one failing takes
+  both down. `initDb()` now holds an advisory lock on a connection of its own while migrating.
+- **A catch that learned to swallow more.** The OpenRouter fetch wrapper caught "not a JSON body" and
+  sent the request unchanged. Reading the routing preferences became a query inside that `try`, so a
+  database blip would have sent requests without `data_collection: "deny"`. Only the parse is caught
+  now; failing to read the preferences fails the request.
+- **Async misuse.** `.filter(async …)` is always truthy (every user was due a digest every tick);
+  arrays of promises serialized to `[{}]` in two API responses; a Gmail save went unawaited. A
+  checker for floating promises, promise conditions and async array callbacks found these.
+- **NUL characters.** Postgres refuses U+0000 in text; SQLite stored it. The crawler strips it, so
+  one stray byte can't fail a whole board.
+
+### Tests run on a driver that behaves like production's
+
+PGlite is the real engine, but its driver is kinder than node-postgres: it turns bigint into numbers
+and quietly converts a number bound to a timestamp. Both hid bugs above, so `useTestDb()` configures
+PGlite to parse and serialize those types as node-postgres does. The regression tests were each
+checked by reverting their fix and watching them fail.
+
+### Moving the data
+
+`pnpm db:copy-sqlite` copies `data/app.db` into an empty, migrated database in one transaction, in
+foreign-key order read from the Postgres catalogue, resets every identity sequence, and moves resume
+PDFs into the file store (rewriting `resume.file_path` to a storage key). It then reads every row back
+and compares it with its SQLite original as a multiset of canonical fingerprints — no dependence on
+row order or collation — and confirms each sequence is past its table's highest id.
+
+On this install's data: **26 tables, 37,964 rows, every row identical, in 23s** against Postgres 17.
+It refuses a non-empty target, and changing one value or deleting one row in the copy is reported as
+exactly that. Postgres comes out at **336MB against SQLite's 512MB**: TOAST compresses the job
+descriptions that make up nearly all of it.
+
+### Cutover and rollback
+
+Stop the app, snapshot `data/`, run the copy against Cloud SQL with `GCS_BUCKET` set, start the new
+image with `DATABASE_URL` and `GCS_BUCKET`. Rollback is the previous image against the untouched
+`data/` — true until the first write to Postgres.
+
+### Not in this change
+
+- A `pg_trgm` GIN index on `job.title_normalized`: title search is a leading-wildcard `LIKE`, still a
+  full scan. Worth measuring on its own.
+- `llm_usage.cost_usd` as `numeric` instead of `double precision`.
+- Batching the crawler's per-job upserts; each is now a network round trip rather than a function call.

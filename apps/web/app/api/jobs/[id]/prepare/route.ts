@@ -8,7 +8,7 @@ export function POST(req: Request, { params }: Ctx) {
   return withUser(req, async (user) => {
     const id = Number((await params).id);
     await ensureJobDetail(id);
-    prepareJob(user.id, id);
+    await prepareJob(user.id, id);
     return json({ ok: true });
   });
 }

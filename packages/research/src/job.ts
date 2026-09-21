@@ -1,6 +1,6 @@
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { getSettings, JobAnalysisSchema } from "@jd/core";
-import { getDb, schema } from "@jd/core/db";
+import { getDb, one, returned, schema } from "@jd/core/db";
 import { assertBudget, forModel, parseStructured, recordMessageUsage } from "@jd/llm";
 import { eq } from "drizzle-orm";
 import { assertUsableStop, NonRetryableError } from "./util";
@@ -19,15 +19,16 @@ Rules:
 
 export async function analyzeJob(jobId: number, opts: { background: boolean }): Promise<JobAnalysisRow> {
   const db = getDb();
-  const row = db
-    .select({ job, companyName: company.name })
-    .from(job)
-    .innerJoin(company, eq(company.id, job.companyId))
-    .where(eq(job.id, jobId))
-    .get();
+  const row = await one(
+    db
+      .select({ job, companyName: company.name })
+      .from(job)
+      .innerJoin(company, eq(company.id, job.companyId))
+      .where(eq(job.id, jobId)),
+  );
   if (!row) throw new NonRetryableError(`Job ${jobId} not found`);
-  assertBudget(opts);
-  const setting = getSettings("ai").models.extraction;
+  await assertBudget(opts);
+  const setting = (await getSettings("ai")).models.extraction;
   const { client, model } = forModel(setting);
   const j = row.job;
   const response = await client.messages.create({
@@ -42,13 +43,13 @@ export async function analyzeJob(jobId: number, opts: { background: boolean }): 
     ],
     output_config: { format: zodOutputFormat(JobAnalysisSchema) },
   });
-  recordMessageUsage("job_analysis", setting, response);
+  await recordMessageUsage("job_analysis", setting, response);
   assertUsableStop(response, "analyze this job posting");
   const analysis = parseStructured(response, JobAnalysisSchema, "job analysis");
   const values = { jobId, data: analysis, contentHash: j.contentHash, model, analyzedAt: new Date() };
-  return db.insert(jobAnalysis).values(values).onConflictDoUpdate({ target: jobAnalysis.jobId, set: values }).returning().get();
+  return await returned(db.insert(jobAnalysis).values(values).onConflictDoUpdate({ target: jobAnalysis.jobId, set: values }).returning());
 }
 
-export function getJobAnalysis(jobId: number): JobAnalysisRow | null {
-  return getDb().select().from(jobAnalysis).where(eq(jobAnalysis.jobId, jobId)).get() ?? null;
+export async function getJobAnalysis(jobId: number): Promise<JobAnalysisRow | null> {
+  return await one(getDb().select().from(jobAnalysis).where(eq(jobAnalysis.jobId, jobId))) ?? null;
 }

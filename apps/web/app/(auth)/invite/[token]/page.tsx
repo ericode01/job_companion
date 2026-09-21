@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 export default async function InvitePage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
-  const invite = findOpenInvite(token);
+  const invite = await findOpenInvite(token);
   if (!invite) {
     return (
       <div className="card space-y-2 p-6 text-center">

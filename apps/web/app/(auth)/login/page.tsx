@@ -9,7 +9,7 @@ export const metadata: Metadata = { title: "Sign in" };
 export const dynamic = "force-dynamic";
 
 export default async function LoginPage() {
-  if (userCount() === 0) redirect("/setup");
+  if (await userCount() === 0) redirect("/setup");
   if (await currentUser()) redirect("/");
   return (
     <>

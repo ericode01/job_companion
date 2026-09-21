@@ -10,10 +10,12 @@
  * disagrees about which jobs are strong is not.
  */
 import { estimateCostUsd, getSpendStatus, listUsers, loadEnv, runAs } from "@jd/core";
+import { initDb } from "@jd/core/db";
 import { classifyEmail, recentlyClassified, trackedApplications } from "@jd/mail";
 import { recentlyScored, scoreFit } from "@jd/research";
 
 loadEnv();
+await initDb();
 
 const argv = process.argv.slice(2);
 const arg = (name: string) => {
@@ -33,17 +35,17 @@ if (!candidate) {
  * subject and snippet only; that is equal footing for the two, not a rerun of the original decision.
  */
 if (purpose === "emails") {
-  const userId = listUsers()[0]?.id;
+  const userId = (await listUsers())[0]?.id;
   if (!userId) {
     console.error("No users.");
     process.exit(1);
   }
-  const emails = recentlyClassified(userId, limit);
-  const hints = trackedApplications(userId)
+  const emails = await recentlyClassified(userId, limit);
+  const hints = (await trackedApplications(userId))
     .filter((a) => a.status !== "saved")
     .slice(-80)
     .map((a) => ({ id: a.id, company: a.company, title: a.title, status: a.status }));
-  const spentAt = getSpendStatus(new Date(), null).todayUsd;
+  const spentAt = (await getSpendStatus(new Date(), null)).todayUsd;
   let agreed = 0;
   let byModel = 0;
   let agreedByModel = 0;
@@ -68,7 +70,7 @@ if (purpose === "emails") {
       console.log(`  FAIL         ${e.kind.padEnd(22)} → ${"".padEnd(22)} ${err instanceof Error ? err.message.slice(0, 60) : String(err)}`);
     }
   }
-  const spent = getSpendStatus(new Date(), null).todayUsd - spentAt;
+  const spent = (await getSpendStatus(new Date(), null)).todayUsd - spentAt;
   console.log(`\n  the model answered   ${byModel}/${emails.length}${byModel < emails.length ? `  (the rest fell back to rules — the model couldn't fill the schema)` : ""}`);
   console.log(`  agreed, model only   ${agreedByModel}/${byModel}`);
   console.log(`  agreed overall       ${agreed}/${emails.length}`);
@@ -78,7 +80,7 @@ if (purpose === "emails") {
   process.exit(0);
 }
 
-const scored = recentlyScored(limit);
+const scored = await recentlyScored(limit);
 if (!scored.length) {
   console.error("No fit scores stored yet, so there is nothing to compare against.");
   process.exit(1);
@@ -91,7 +93,7 @@ console.log(`\nComparing ${candidate} against ${scored.length} scores from ${sco
 const deltas: number[] = [];
 let bandChanges = 0;
 let failures = 0;
-const spentBefore = getSpendStatus(new Date(), null).todayUsd;
+const spentBefore = (await getSpendStatus(new Date(), null)).todayUsd;
 
 for (const row of scored) {
   try {
@@ -111,7 +113,7 @@ for (const row of scored) {
 }
 
 const mean = deltas.length ? deltas.reduce((a, b) => a + b, 0) / deltas.length : 0;
-const spent = getSpendStatus(new Date(), null).todayUsd - spentBefore;
+const spent = (await getSpendStatus(new Date(), null)).todayUsd - spentBefore;
 // Roughly what these calls have been costing: the per-call averages from the existing ledger.
 const wouldHaveCost = scored.length * estimateCostUsd({ purpose: "fit_score", model: scored[0]!.model, inputTokens: 3300, outputTokens: 650 });
 

@@ -8,7 +8,7 @@ const Body = z.object({ eventId: z.number().int() });
 export function POST(req: Request) {
   return withUser(req, async (user) => {
     const { eventId } = Body.parse(await readJson(req));
-    const out = undoEvent(user.id, eventId);
+    const out = await undoEvent(user.id, eventId);
     return out.ok ? json(out) : json({ error: out.reason }, { status: 409 });
   });
 }

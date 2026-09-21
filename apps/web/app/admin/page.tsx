@@ -1,5 +1,5 @@
 import { appOrigin, getSettings, getSpendStatus, listUsers, loadEnv, spendByUser } from "@jd/core";
-import { getDb, schema } from "@jd/core/db";
+import { getDb, one, schema } from "@jd/core/db";
 import { AI_KEY_HINT, hasApiKey } from "@jd/llm";
 import { googleConfigured } from "@jd/mail";
 import { countOpenJobs, pendingDetailCount } from "@jd/sources";
@@ -28,43 +28,46 @@ const PURPOSE_LABELS: Record<string, string> = {
   email_classify: "Sorting job emails",
 };
 
-export default function AdminOverview() {
+export default async function AdminOverview() {
   loadEnv();
   const db = getDb();
-  const users = listUsers();
+  const users = await listUsers();
   const names = new Map(users.map((u) => [u.id, u.name]));
-  const spend = getSpendStatus(new Date(), null);
-  const byUser = spendByUser().sort((a, b) => b.usd - a.usd);
+  const spend = await getSpendStatus(new Date(), null);
+  const byUser = (await spendByUser()).sort((a, b) => b.usd - a.usd);
   const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-  const byPurpose = db
-    .select({ purpose: schema.llmUsage.purpose, usd: sql<number>`sum(${schema.llmUsage.costUsd})`, calls: count() })
-    .from(schema.llmUsage)
-    .where(gte(schema.llmUsage.ts, monthStart))
-    .groupBy(schema.llmUsage.purpose)
-    .all()
-    .sort((a, b) => b.usd - a.usd);
+  const byPurpose = (
+    await db
+      .select({ purpose: schema.llmUsage.purpose, usd: sql<number>`sum(${schema.llmUsage.costUsd})`.mapWith(Number), calls: count() })
+      .from(schema.llmUsage)
+      .where(gte(schema.llmUsage.ts, monthStart))
+      .groupBy(schema.llmUsage.purpose)
+  ).sort((a, b) => b.usd - a.usd);
   const queue = Object.fromEntries(
-    db
-      .select({ status: schema.task.status, n: count() })
-      .from(schema.task)
-      .where(inArray(schema.task.status, ["queued", "running"]))
-      .groupBy(schema.task.status)
-      .all()
-      .map((q) => [q.status, q.n]),
+    (
+      await db
+        .select({ status: schema.task.status, n: count() })
+        .from(schema.task)
+        .where(inArray(schema.task.status, ["queued", "running"]))
+        .groupBy(schema.task.status)
+    ).map((q) => [q.status, q.n]),
   ) as Partial<Record<"queued" | "running", number>>;
   // Old failures stay in the table for reference; only recent ones need attention.
   const failed =
-    db
-      .select({ n: count() })
-      .from(schema.task)
-      .where(and(eq(schema.task.status, "failed"), gte(schema.task.finishedAt, new Date(Date.now() - 86_400_000))))
-      .get()?.n ?? 0;
-  const coverage = countOpenJobs();
-  const erroring = db.select({ n: count() }).from(schema.company).where(eq(schema.company.crawlStatus, "error")).get()?.n ?? 0;
-  const crawl = latestCrawl();
+    (
+      await one(
+        db
+          .select({ n: count() })
+          .from(schema.task)
+          .where(and(eq(schema.task.status, "failed"), gte(schema.task.finishedAt, new Date(Date.now() - 86_400_000)))),
+      )
+    )?.n ?? 0;
+  const coverage = await countOpenJobs();
+  const erroring = (await one(db.select({ n: count() }).from(schema.company).where(eq(schema.company.crawlStatus, "error"))))?.n ?? 0;
+  const crawl = await latestCrawl();
   const ext = extensionBuild();
   const origin = appOrigin();
-  const mail = getSettings("mail").method;
+  const mail = (await getSettings("mail")).method;
   const mailReady = mail === "resend" ? Boolean(process.env.RESEND_API_KEY) : Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
   const active = users.filter((u) => !u.disabled);
 
@@ -98,10 +101,10 @@ export default function AdminOverview() {
                 ? `Chrome extension v${ext.version} is ready to download.`
                 : `The Chrome extension was built for ${ext.builtFor.join(", ")}, not ${origin}. Rebuild it with APP_URL=${origin}.`}
           </Check>
-          <Check ok={googleConfigured() || !getSettings("mailSync").enabled}>
+          <Check ok={googleConfigured() || !(await getSettings("mailSync")).enabled}>
             {googleConfigured()
               ? "Gmail can be connected with Google sign-in."
-              : getSettings("mailSync").enabled
+              : (await getSettings("mailSync")).enabled
                 ? "Google sign-in isn't set up, so Gmail users need an app password to connect their mailbox."
                 : "Mailbox sync is turned off."}{" "}
             <Link href="/admin/mailbox" className="text-accent hover:underline">
@@ -121,7 +124,7 @@ export default function AdminOverview() {
         </h2>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <StatTile label="People" value={fmtCount(active.length)} sub={`${users.length - active.length} disabled · ${users.filter((u) => u.role === "admin").length} admin`} />
-          <StatTile label="Open jobs" value={fmtCount(coverage.jobs)} sub={`from ${fmtCount(coverage.companies)} companies · ${fmtCount(pendingDetailCount())} awaiting detail`} />
+          <StatTile label="Open jobs" value={fmtCount(coverage.jobs)} sub={`from ${fmtCount(coverage.companies)} companies · ${fmtCount(await pendingDetailCount())} awaiting detail`} />
           <Meter label="AI spend today" used={spend.todayUsd} cap={spend.dailyCapUsd} />
           <Meter label="AI spend this month" used={spend.monthUsd} cap={spend.monthlyCapUsd} />
         </div>

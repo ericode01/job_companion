@@ -1,5 +1,5 @@
 import { getProfile, getSettings } from "@jd/core";
-import { getDb, schema } from "@jd/core/db";
+import { getDb, one, schema } from "@jd/core/db";
 import { assertBudget, forModel, recordMessageUsage } from "@jd/llm";
 import { eq } from "drizzle-orm";
 import { getCompanyProfile } from "./company";
@@ -21,30 +21,31 @@ Rules:
 
 export async function generateCoverLetter(applicationId: number, opts: { background: boolean }): Promise<string> {
   const db = getDb();
-  const app = db.select().from(schema.application).where(eq(schema.application.id, applicationId)).get();
+  const app = await one(db.select().from(schema.application).where(eq(schema.application.id, applicationId)));
   if (!app) throw new NonRetryableError(`Application ${applicationId} not found`);
   const jobId = app.jobId;
   if (jobId === null) throw new NonRetryableError("This application isn't linked to a job posting, so there's nothing to write a letter for.");
-  const row = db
-    .select({ job: schema.job, company: schema.company })
-    .from(schema.job)
-    .innerJoin(schema.company, eq(schema.company.id, schema.job.companyId))
-    .where(eq(schema.job.id, jobId))
-    .get();
+  const row = await one(
+    db
+      .select({ job: schema.job, company: schema.company })
+      .from(schema.job)
+      .innerJoin(schema.company, eq(schema.company.id, schema.job.companyId))
+      .where(eq(schema.job.id, jobId)),
+  );
   if (!row) throw new NonRetryableError("Job not found");
-  const resume = app.resumeId ? getResume(app.resumeId) : null;
+  const resume = app.resumeId ? await getResume(app.resumeId) : null;
   if (!resume) throw new NonRetryableError("Upload your resume before generating a cover letter.");
-  assertBudget(opts);
+  await assertBudget(opts);
 
-  const profile = getCompanyProfile(row.company.id)?.data;
-  const analysis = getJobAnalysis(jobId)?.data;
-  const me = app.userId ? getProfile(app.userId) : null;
+  const profile = (await getCompanyProfile(row.company.id))?.data;
+  const analysis = (await getJobAnalysis(jobId))?.data;
+  const me = app.userId ? await getProfile(app.userId) : null;
   const name = resume.source?.contact.name ?? me?.name ?? "";
   const companyNotes = profile
     ? [profile.overview, ...profile.products.map((p) => `${p.name}: ${p.description}`)].filter(Boolean).join("\n")
     : "none";
 
-  const setting = getSettings("ai").models.writing;
+  const setting = (await getSettings("ai")).models.writing;
   const { client, model } = forModel(setting);
   const resumeText = resumeForPrompt(resume);
   const today = new Date().toISOString().slice(0, 10);
@@ -72,7 +73,7 @@ export async function generateCoverLetter(applicationId: number, opts: { backgro
 
   const write = async () => {
     const response = await client.messages.create({ model, max_tokens: 4000, system: SYSTEM, messages });
-    recordMessageUsage("cover_letter", setting, response);
+    await recordMessageUsage("cover_letter", setting, response);
     assertUsableStop(response, "write the cover letter");
     return { response, letter: textOf(response).trim() };
   };
@@ -90,9 +91,8 @@ export async function generateCoverLetter(applicationId: number, opts: { backgro
     unsupported = unsupportedClaims(letter, facts);
   }
   if (letter.length < 200) throw new NonRetryableError("The cover letter came back empty. Try again.");
-  db.update(schema.application)
+  await db.update(schema.application)
     .set({ coverLetter: letter, coverLetterWarnings: unsupported, updatedAt: new Date() })
-    .where(eq(schema.application.id, applicationId))
-    .run();
+    .where(eq(schema.application.id, applicationId));
   return letter;
 }

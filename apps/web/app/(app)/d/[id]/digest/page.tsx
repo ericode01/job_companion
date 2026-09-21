@@ -9,9 +9,9 @@ export const metadata: Metadata = { title: "Email digest" };
 
 export default async function DashboardDigestPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requirePageUser();
-  const d = getDashboard(user.id, Number((await params).id));
+  const d = await getDashboard(user.id, Number((await params).id));
   if (!d) notFound();
-  const digest = getUserSettings(user.id, "digest");
+  const digest = await getUserSettings(user.id, "digest");
   return (
     <DashboardDigest
       dashboardId={d.id}

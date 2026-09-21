@@ -1,6 +1,8 @@
-# Job Companion: web app + background worker in one container.
+# Job Companion: web app + background worker in one container. State lives in Postgres
+# (DATABASE_URL) and a GCS bucket (GCS_BUCKET), so the container keeps nothing that matters.
 #   docker build --build-arg APP_ORIGIN=https://jobs.example.com -t job-companion .
-#   docker run -d -p 127.0.0.1:4317:4317 -v jc-data:/data --env-file .env.production job-companion
+#   docker run -d -p 127.0.0.1:4317:4317 --env-file .env.production job-companion
+# Moving from SQLite: mount the old data/ at /data and run `pnpm db:copy-sqlite` once (README → Hosting).
 # Put an HTTPS reverse proxy (Caddy, nginx, a load balancer) in front; see README → Hosting.
 FROM node:22-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ ca-certificates \

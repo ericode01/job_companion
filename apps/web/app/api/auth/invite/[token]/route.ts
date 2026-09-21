@@ -19,7 +19,7 @@ export async function POST(req: Request, { params }: Ctx) {
   try {
     const body = Body.parse(await readJson(req));
     const user = await acceptInvite((await params).token, body);
-    const { token, expiresAt } = createSession(user.id);
+    const { token, expiresAt } = await createSession(user.id);
     await setSessionCookie(token, expiresAt);
     return NextResponse.json({ user: toPublicUser(user) });
   } catch (err) {

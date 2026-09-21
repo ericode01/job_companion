@@ -17,10 +17,10 @@ export function POST(req: Request) {
     const parsed = Body.safeParse(await req.json().catch(() => null));
     if (!parsed.success) return extensionJson(req, { error: "Invalid request" }, { status: 400 });
     const { applicationId, ...input } = parsed.data;
-    const app = getApplication(userId, applicationId);
+    const app = await getApplication(userId, applicationId);
     if (!app) return extensionJson(req, { error: "Application not found" }, { status: 404 });
-    const saved = saveAnswer(userId, { ...input, jobId: app.jobId });
-    resolveInboxByQuestion(userId, input.question);
+    const saved = await saveAnswer(userId, { ...input, jobId: app.jobId });
+    await resolveInboxByQuestion(userId, input.question);
     return extensionJson(req, saved);
   });
 }

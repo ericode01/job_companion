@@ -3,8 +3,9 @@ import type { FitResult, JobAnalysis, ResumeSource } from "@jd/core";
 import type { StructuredNotes } from "../src/company";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { makePdf, useTempDataDir } from "./helpers";
+import { one, returned } from "@jd/core/db";
 
-useTempDataDir();
+await useTempDataDir();
 
 /* ---- fake Claude client ---- */
 const parseQueue: unknown[] = [];
@@ -60,11 +61,11 @@ const RESUME: ResumeSource = {
 
 let userId = 0;
 
-beforeAll(() => {
+beforeAll(async () => {
   const db = getDb();
-  userId = db.insert(schema.user).values({ email: "sam@example.com", name: "Sam", passwordHash: "x", role: "member" }).returning().get().id;
-  companyId = db.insert(schema.company).values({ name: "Acme", domain: "acme.com", atsType: "greenhouse", atsSlug: "acme", source: "manual" }).returning().get().id;
-  storeCompanyJobs(companyId, "greenhouse", [
+  userId = (await returned(db.insert(schema.user).values({ email: "sam@example.com", name: "Sam", passwordHash: "x", role: "member" }).returning())).id;
+  companyId = (await returned(db.insert(schema.company).values({ name: "Acme", domain: "acme.com", atsType: "greenhouse", atsSlug: "acme", source: "manual" }).returning())).id;
+  await storeCompanyJobs(companyId, "greenhouse", [
     {
       externalId: "1",
       title: "Staff Software Engineer, Payments",
@@ -80,7 +81,7 @@ beforeAll(() => {
       postedAt: new Date(),
     },
   ]);
-  jobId = db.select().from(schema.job).get()!.id;
+  jobId = (await one(db.select().from(schema.job)))!.id;
 });
 
 beforeEach(() => {
@@ -90,29 +91,29 @@ beforeEach(() => {
 });
 
 describe("task queue", () => {
-  it("dedupes queued tasks and promotes background tasks a user asks for", () => {
-    const a = core.enqueueTask("analyze_job", "job:q1", { jobId: 1 }, { background: true });
-    const b = core.enqueueTask("analyze_job", "job:q1", { jobId: 1 }, { background: true });
+  it("dedupes queued tasks and promotes background tasks a user asks for", async () => {
+    const a = await core.enqueueTask("analyze_job", "job:q1", { jobId: 1 }, { background: true });
+    const b = await core.enqueueTask("analyze_job", "job:q1", { jobId: 1 }, { background: true });
     expect(b.id).toBe(a.id);
-    const promoted = core.enqueueTask("analyze_job", "job:q1", { jobId: 1 }, { background: false });
+    const promoted = await core.enqueueTask("analyze_job", "job:q1", { jobId: 1 }, { background: false });
     expect(promoted).toMatchObject({ id: a.id, background: false, priority: 10 });
   });
 
-  it("claims by priority and schedules retries", () => {
-    const low = core.enqueueTask("score_fit", "fit:q2", {}, { background: true });
-    const high = core.enqueueTask("score_fit", "fit:q3", {}, { background: false });
-    expect(core.claimTask(["score_fit"])?.id).toBe(high.id);
-    const claimed = core.claimTask(["score_fit"])!;
+  it("claims by priority and schedules retries", async () => {
+    const low = await core.enqueueTask("score_fit", "fit:q2", {}, { background: true });
+    const high = await core.enqueueTask("score_fit", "fit:q3", {}, { background: false });
+    expect((await core.claimTask(["score_fit"]))?.id).toBe(high.id);
+    const claimed = (await core.claimTask(["score_fit"]))!;
     expect(claimed.id).toBe(low.id);
-    core.failTask(claimed.id, "rate limited", new Date(Date.now() + 60_000));
-    expect(core.claimTask(["score_fit"])).toBeNull(); // not runnable yet
-    getDb().delete(schema.task).run();
+    await core.failTask(claimed.id, "rate limited", new Date(Date.now() + 60_000));
+    expect(await core.claimTask(["score_fit"])).toBeNull(); // not runnable yet
+    await getDb().delete(schema.task);
   });
 });
 
 describe("resume", () => {
   it("stores the PDF, extracts text, parses sections, and prefills the profile without overwriting", async () => {
-    core.saveProfile(userId, { name: "Samantha R.", links: {} });
+    await core.saveProfile(userId, { name: "Samantha R.", links: {} });
     const row = await research.saveMasterResume(userId, makePdf(["Sam Rivera", "Senior Software Engineer at Acme"]), "../../etc/sam.pdf");
     expect(row.fileName).toBe("sam.pdf");
     expect(row.parsedText).toContain("Senior Software Engineer at Acme");
@@ -125,7 +126,7 @@ describe("resume", () => {
     const docBlock = (calls[0]!.params.messages[0]!.content as Anthropic.ContentBlockParam[])[0]!;
     expect(docBlock.type).toBe("document");
 
-    const profile = core.getProfile(userId)!;
+    const profile = (await core.getProfile(userId))!;
     expect(profile.name).toBe("Samantha R."); // kept
     expect(profile.email).toBe("sam@example.com"); // filled
     expect(profile.links).toMatchObject({ github: "https://github.com/samr", linkedin: "linkedin.com/in/samr" });
@@ -135,9 +136,9 @@ describe("resume", () => {
     await expect(research.saveMasterResume(userId, new TextEncoder().encode("hello"), "x.pdf")).rejects.toThrow("isn't a PDF");
   });
 
-  it("changing the resume changes its hash", () => {
-    const cur = research.currentMasterResume(userId)!;
-    const edited = research.updateResumeSource(cur.id, { ...RESUME, summary: "Changed" });
+  it("changing the resume changes its hash", async () => {
+    const cur = (await research.currentMasterResume(userId))!;
+    const edited = await research.updateResumeSource(cur.id, { ...RESUME, summary: "Changed" });
     expect(edited.sourceHash).not.toBe(cur.sourceHash);
   });
 });
@@ -159,11 +160,11 @@ describe("job analysis and fit", () => {
     parseQueue.push(analysis);
     const row = await research.analyzeJob(jobId, { background: false });
     expect(row.data.techStack).toEqual(["Go", "Kafka"]);
-    expect(row.contentHash).toBe(getDb().select().from(schema.job).get()!.contentHash);
+    expect(row.contentHash).toBe((await one(getDb().select().from(schema.job)))!.contentHash);
   });
 
   it("scores fit with the resume in a cached system prefix and clamps the score", async () => {
-    const resume = research.currentMasterResume(userId)!;
+    const resume = (await research.currentMasterResume(userId))!;
     const fit: FitResult = { score: 104.6, verdict: "strong", summary: "Great", strengths: [{ point: "Payments", evidence: "ledger in Go" }], gaps: [], talkingPoints: [] };
     parseQueue.push(fit);
     const row = await research.scoreFit(jobId, resume.id, { background: true });
@@ -172,25 +173,25 @@ describe("job analysis and fit", () => {
     expect(system[0]!.cache_control).toEqual({ type: "ephemeral" });
     expect(system[0]!.text).toContain("Built payments ledger in Go");
     expect(system[0]!.text).toContain("ENTREPRENEURIAL EXPERIENCE\n- Co-founded a RAG-based app");
-    expect(research.getFitScores([jobId], resume.sourceHash).get(jobId)).toBe(100);
+    expect((await research.getFitScores([jobId], resume.sourceHash)).get(jobId)).toBe(100);
   });
 
-  it("enqueueFitScores skips jobs already scored for this resume", () => {
-    expect(research.enqueueFitScores(userId, [jobId], true)).toBe(0);
+  it("enqueueFitScores skips jobs already scored for this resume", async () => {
+    expect(await research.enqueueFitScores(userId, [jobId], true)).toBe(0);
   });
 
   it("stops background work when the spend cap is reached", async () => {
-    core.saveSettings("ai", { dailyCapUsd: 0 });
+    await core.saveSettings("ai", { dailyCapUsd: 0 });
     await expect(research.analyzeJob(jobId, { background: true })).rejects.toThrow("daily limit");
-    core.saveSettings("ai", {});
+    await core.saveSettings("ai", {});
   });
 
   it("holds a member to their own daily cap, and records spend against them", async () => {
-    core.saveSettings("ai", { perUserDailyCapUsd: 0 });
+    await core.saveSettings("ai", { perUserDailyCapUsd: 0 });
     await core.runAs(userId, () => expect(research.analyzeJob(jobId, { background: false })).rejects.toThrow("your daily limit"));
-    core.saveSettings("ai", {});
-    core.runAs(userId, () => core.recordUsage({ purpose: "test", model: "claude-haiku-4-5", inputTokens: 1000, outputTokens: 0 }));
-    expect(core.getSpendStatus(new Date(), userId).userTodayUsd).toBeGreaterThan(0);
+    await core.saveSettings("ai", {});
+    await core.runAs(userId, () => core.recordUsage({ purpose: "test", model: "claude-haiku-4-5", inputTokens: 1000, outputTokens: 0 }));
+    expect((await core.getSpendStatus(new Date(), userId)).userTodayUsd).toBeGreaterThan(0);
   });
 });
 
@@ -263,16 +264,16 @@ describe("company research", () => {
     expect(d.businessModel).toEqual({ value: null, sourceUrl: null });
 
     expect(row.consultedUrls).toEqual(expect.arrayContaining(["https://news.example/acme-series-c", "https://acme.com/about"]));
-    expect(research.isProfileStale(row)).toBe(false);
+    expect(await research.isProfileStale(row)).toBe(false);
   });
 
   it("asks a Sonnet-class model for a thinking budget, and never asks Haiku", async () => {
-    core.saveSettings("ai", { models: { research: "anthropic:claude-sonnet-5" } });
+    await core.saveSettings("ai", { models: { research: "anthropic:claude-sonnet-5" } });
     streamQueue.push({ stop_reason: "end_turn", content: [{ type: "text", text: "Notes.", citations: null } as Anthropic.TextBlock] });
     parseQueue.push(structured);
     await research.researchCompany(companyId, { background: false, reuseNotes: false });
     expect(calls.filter((c) => c.kind === "stream").at(-1)!.params.output_config?.effort).toBe("medium");
-    core.saveSettings("ai", {});
+    await core.saveSettings("ai", {});
   });
 
   it("reuses cached notes when structuring is retried", async () => {

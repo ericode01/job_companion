@@ -10,12 +10,12 @@ type Ctx = { params: Promise<{ jobId: string }> };
 export function POST(req: Request, { params }: Ctx) {
   return withUser(req, async (user) => {
     if (!hasApiKey()) return NextResponse.json({ error: "AI is turned off on this server (no API key)." }, { status: 422 });
-    const master = currentMasterResume(user.id);
+    const master = await currentMasterResume(user.id);
     if (!master || master.parseStatus !== "done") {
       return NextResponse.json({ error: "Upload your resume and let it finish reading first." }, { status: 422 });
     }
     const jobId = Number((await params).jobId);
-    startTailoring(user.id, jobId);
-    return json({ task: tailorStatus(user.id, jobId) });
+    await startTailoring(user.id, jobId);
+    return json({ task: await tailorStatus(user.id, jobId) });
   });
 }

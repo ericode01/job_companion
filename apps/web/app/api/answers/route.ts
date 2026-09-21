@@ -3,8 +3,8 @@ import { z } from "zod";
 import { json, readJson, withUser } from "@/lib/api";
 
 export function GET(req: Request) {
-  return withUser(req, (user) =>
-    json({ answers: listAnswers(user.id), inbox: listInbox(user.id, "pending"), pending: pendingInboxCount(user.id) }),
+  return withUser(req, async (user) =>
+    json({ answers: await listAnswers(user.id), inbox: await listInbox(user.id, "pending"), pending: await pendingInboxCount(user.id) }),
   );
 }
 
@@ -22,8 +22,12 @@ export function POST(req: Request) {
     const raw = await readJson(req);
     if (Array.isArray(raw)) {
       const items = z.array(Body).max(40).parse(raw);
-      return json(items.map((a) => saveAnswer(user.id, { ...a, scope: "global" })));
+      // One at a time: saveAnswer looks for a matching answer before inserting, so running these
+      // concurrently could insert the same question twice.
+      const saved = [];
+      for (const a of items) saved.push(await saveAnswer(user.id, { ...a, scope: "global" }));
+      return json(saved);
     }
-    return json(saveAnswer(user.id, { ...Body.parse(raw), scope: "global" }));
+    return json(await saveAnswer(user.id, { ...Body.parse(raw), scope: "global" }));
   });
 }

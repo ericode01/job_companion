@@ -59,7 +59,7 @@ export const notFound = () => NextResponse.json({ error: "Not found" }, { status
 /* ---------- signed-in routes ---------- */
 
 export async function sessionUser(): Promise<PublicUser | null> {
-  return userForSession((await cookies()).get(SESSION_COOKIE)?.value);
+  return await userForSession((await cookies()).get(SESSION_COOKIE)?.value);
 }
 
 interface RouteOptions {
@@ -122,7 +122,7 @@ export async function withExtension(req: Request, handler: (userId: number) => P
   const badHost = assertAllowedHost(req);
   if (badHost) return badHost;
   const { userForExtensionToken } = await import("@jd/apply");
-  const userId = userForExtensionToken(req.headers.get("x-jd-token"), req.headers.get("x-jd-version"));
+  const userId = await userForExtensionToken(req.headers.get("x-jd-token"), req.headers.get("x-jd-version"));
   if (userId === null) {
     return extensionJson(req, { error: "Extension not paired. Sign in to Job Companion in this browser to pair it." }, { status: 401 });
   }

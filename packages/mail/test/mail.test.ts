@@ -4,8 +4,10 @@ import path from "node:path";
 import type Anthropic from "@anthropic-ai/sdk";
 import type { EmailClassification } from "@jd/core";
 import { beforeAll, describe, expect, it, vi } from "vitest";
+import { one, returned } from "@jd/core/db";
 
-process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "jd-mail-"));
+const { useTestDb } = await import("@jd/core/testing");
+await useTestDb("jd-mail-");
 process.env.SECRET_KEY = "test-secret-key-for-mail-sync";
 const fakeDir = fs.mkdtempSync(path.join(os.tmpdir(), "jd-mail-eml-"));
 process.env.MAIL_FAKE_DIR = fakeDir;
@@ -75,34 +77,35 @@ function email(over: Partial<import("../src").RawEmail> = {}): import("../src").
   };
 }
 
-function newApp(values: Partial<typeof schema.application.$inferInsert>) {
-  const row = getDb()
-    .insert(schema.application)
-    .values({ userId, status: "applying", searchId, ...values })
-    .returning()
-    .get();
-  recordCreated(row.id, row.status, "manual");
+async function newApp(values: Partial<typeof schema.application.$inferInsert>) {
+  const row = await returned(
+    getDb()
+      .insert(schema.application)
+      .values({ userId, status: "applying", searchId, ...values })
+      .returning(),
+  );
+  await recordCreated(row.id, row.status, "manual");
   return row;
 }
 
-const app = (id: number) => getDb().select().from(schema.application).where(eq(schema.application.id, id)).get()!;
+const app = async (id: number) => (await one(getDb().select().from(schema.application).where(eq(schema.application.id, id))))!;
 
-beforeAll(() => {
+beforeAll(async () => {
   const db = getDb();
-  userId = db.insert(schema.user).values({ email: "sam@example.com", name: "Sam", passwordHash: "x" }).returning().get().id;
-  otherId = db.insert(schema.user).values({ email: "alex@example.com", name: "Alex", passwordHash: "x" }).returning().get().id;
-  const acme = db.insert(schema.company).values({ name: "Acme", domain: "acme.com", atsType: "lever", atsSlug: "acme", source: "manual" }).returning().get().id;
-  const globex = db.insert(schema.company).values({ name: "Globex Corporation", domain: "globex.com", atsType: "greenhouse", atsSlug: "globex", source: "manual" }).returning().get().id;
+  userId = (await returned(db.insert(schema.user).values({ email: "sam@example.com", name: "Sam", passwordHash: "x" }).returning())).id;
+  otherId = (await returned(db.insert(schema.user).values({ email: "alex@example.com", name: "Alex", passwordHash: "x" }).returning())).id;
+  const acme = (await returned(db.insert(schema.company).values({ name: "Acme", domain: "acme.com", atsType: "lever", atsSlug: "acme", source: "manual" }).returning())).id;
+  const globex = (await returned(db.insert(schema.company).values({ name: "Globex Corporation", domain: "globex.com", atsType: "greenhouse", atsSlug: "globex", source: "manual" }).returning())).id;
   const base = { locations: ["New York, NY"], locationType: "onsite" as const, remoteCountries: [], department: null, comp: null, descriptionHtml: "<p>x</p>", descriptionText: "x", postedAt: new Date() };
-  storeCompanyJobs(acme, "lever", [{ ...base, externalId: "a1", title: "Staff Engineer", url: "https://jobs.lever.co/acme/a1", applyUrl: "https://jobs.lever.co/acme/a1/apply" }]);
-  storeCompanyJobs(globex, "greenhouse", [{ ...base, externalId: "4001", title: "Senior Product Manager", url: "https://job-boards.greenhouse.io/globex/jobs/4001", applyUrl: "https://job-boards.greenhouse.io/globex/jobs/4001" }]);
-  acmeJob = db.select().from(schema.job).where(eq(schema.job.externalId, "a1")).get()!.id;
-  globexJob = db.select().from(schema.job).where(eq(schema.job.externalId, "4001")).get()!.id;
+  await storeCompanyJobs(acme, "lever", [{ ...base, externalId: "a1", title: "Staff Engineer", url: "https://jobs.lever.co/acme/a1", applyUrl: "https://jobs.lever.co/acme/a1/apply" }]);
+  await storeCompanyJobs(globex, "greenhouse", [{ ...base, externalId: "4001", title: "Senior Product Manager", url: "https://job-boards.greenhouse.io/globex/jobs/4001", applyUrl: "https://job-boards.greenhouse.io/globex/jobs/4001" }]);
+  acmeJob = (await one(db.select().from(schema.job).where(eq(schema.job.externalId, "a1"))))!.id;
+  globexJob = (await one(db.select().from(schema.job).where(eq(schema.job.externalId, "4001"))))!.id;
   const filter = (role: string[]) => ({ roleKeywords: role, levelKeywords: [], excludeKeywords: [], locations: [], includeRemoteUS: true, remoteOnly: false, postedWithinDays: null });
-  searchId = db.insert(schema.savedSearch).values({ userId, rawQuery: "staff engineer", filter: filter(["engineer"]), parsedBy: "rules" }).returning().get().id;
-  pmSearchId = db.insert(schema.savedSearch).values({ userId, rawQuery: "product manager", filter: filter(["product manager"]), parsedBy: "rules" }).returning().get().id;
-  conn = db.insert(schema.mailboxConnection).values({ userId, provider: "imap", address: "sam@example.com", secret: encryptSecret("pw"), imapHost: "fake.local", imapPort: 993 }).returning().get();
-  otherConn = db.insert(schema.mailboxConnection).values({ userId: otherId, provider: "imap", address: "alex@example.com", secret: encryptSecret("pw"), imapHost: "fake.local", imapPort: 993 }).returning().get();
+  searchId = (await returned(db.insert(schema.savedSearch).values({ userId, rawQuery: "staff engineer", filter: filter(["engineer"]), parsedBy: "rules" }).returning())).id;
+  pmSearchId = (await returned(db.insert(schema.savedSearch).values({ userId, rawQuery: "product manager", filter: filter(["product manager"]), parsedBy: "rules" }).returning())).id;
+  conn = await returned(db.insert(schema.mailboxConnection).values({ userId, provider: "imap", address: "sam@example.com", secret: encryptSecret("pw"), imapHost: "fake.local", imapPort: 993 }).returning());
+  otherConn = await returned(db.insert(schema.mailboxConnection).values({ userId: otherId, provider: "imap", address: "alex@example.com", secret: encryptSecret("pw"), imapHost: "fake.local", imapPort: 993 }).returning());
 });
 
 describe("prefilter", () => {
@@ -160,13 +163,13 @@ describe("rules classifier and text", () => {
     expect(mail.extractLinks('<a href="https://jobs.lever.co/acme/a1">job</a>', "see https://acme.com/x.")).toEqual(["https://jobs.lever.co/acme/a1", "https://acme.com/x"]);
   });
 
-  it("matches companies and titles loosely but not wrongly", () => {
+  it("matches companies and titles loosely but not wrongly", async () => {
     expect(mail.sameCompany("Globex Corporation", "Globex")).toBe(true);
     expect(mail.sameCompany("Block", "Cityblock Health")).toBe(false);
     expect(mail.titleSimilarity("Sr. Software Engineer", "Senior Software Engineer")).toBe(1);
     expect(mail.titleSimilarity("Staff Engineer", "Product Designer")).toBe(0);
-    expect(mail.findJobForExternal("Globex", "Senior Product Manager, Payments Risk", null)).toBeNull();
-    expect(mail.findJobForExternal("Globex", "Sr. Product Manager", "talent@globex.com")).toBe(globexJob);
+    expect(await mail.findJobForExternal("Globex", "Senior Product Manager, Payments Risk", null)).toBeNull();
+    expect(await mail.findJobForExternal("Globex", "Sr. Product Manager", "talent@globex.com")).toBe(globexJob);
   });
 });
 
@@ -233,146 +236,146 @@ describe("rounds", () => {
 });
 
 describe("processing emails into the pipeline", () => {
-  it("confirms an application found by its job link and moves it to Applied", () => {
-    const a = newApp({ jobId: acmeJob });
-    const out = mail.processEmail(conn, email({ links: ["https://jobs.lever.co/acme/a1"] }), cls({ kind: "application_received" }), "llm", mail.trackedApplications(userId));
+  it("confirms an application found by its job link and moves it to Applied", async () => {
+    const a = await newApp({ jobId: acmeJob });
+    const out = await mail.processEmail(conn, email({ links: ["https://jobs.lever.co/acme/a1"] }), cls({ kind: "application_received" }), "llm", await mail.trackedApplications(userId));
     expect(out.row?.applicationId).toBe(a.id);
-    expect(app(a.id)).toMatchObject({ status: "applied" });
-    expect(app(a.id).confirmedAt).toBeTruthy();
-    expect(applicationEvents(a.id)[0]).toMatchObject({ source: "email", fromStatus: "applying", toStatus: "applied" });
+    expect(await app(a.id)).toMatchObject({ status: "applied" });
+    expect((await app(a.id)).confirmedAt).toBeTruthy();
+    expect((await applicationEvents(a.id))[0]).toMatchObject({ source: "email", fromStatus: "applying", toStatus: "applied" });
   });
 
-  it("follows a thread, sorts interview rounds and raises actions", () => {
-    const a = mail.trackedApplications(userId).find((x) => x.jobId === acmeJob)!;
-    const first = mail.processEmail(
+  it("follows a thread, sorts interview rounds and raises actions", async () => {
+    const a = (await mail.trackedApplications(userId)).find((x) => x.jobId === acmeJob)!;
+    const first = await mail.processEmail(
       conn,
       email({ threadId: "thread-acme", subject: "Chat about Staff Engineer" }),
       cls({ kind: "interview_request", round: "recruiter_call", action: { needed: true, type: "schedule", text: "Reply with your availability", dueAt: new Date(Date.now() + 2 * 86_400_000).toISOString() } }),
       "llm",
-      mail.trackedApplications(userId),
+      await mail.trackedApplications(userId),
     );
     expect(first.row?.applicationId).toBe(a.id);
-    expect(app(a.id).status).toBe("interview");
+    expect((await app(a.id)).status).toBe("interview");
     // A reply in the same thread links by thread even without a company name.
-    const reply = mail.processEmail(conn, email({ threadId: "thread-acme", fromAddress: "jane@gmail.com", fromName: "Jane" }), cls({ kind: "interview_scheduled", round: "recruiter_call", companyName: null, jobTitle: null, eventAt: new Date(Date.now() + 3 * 86_400_000).toISOString() }), "llm", mail.trackedApplications(userId));
+    const reply = await mail.processEmail(conn, email({ threadId: "thread-acme", fromAddress: "jane@gmail.com", fromName: "Jane" }), cls({ kind: "interview_scheduled", round: "recruiter_call", companyName: null, jobTitle: null, eventAt: new Date(Date.now() + 3 * 86_400_000).toISOString() }), "llm", await mail.trackedApplications(userId));
     expect(reply.row?.applicationId).toBe(a.id);
-    const actions = mail.openActions(userId);
+    const actions = await mail.openActions(userId);
     expect(actions).toHaveLength(1);
     expect(actions[0]).toMatchObject({ company: "Acme", actionText: "Reply with your availability", searchId });
-    const card = mail.mailForCards(userId, [a.id]).get(a.id)!;
+    const card = (await mail.mailForCards(userId, [a.id])).get(a.id)!;
     expect(card).toMatchObject({ emailCount: 3, openActions: 1 });
     expect(card.rounds[0]).toMatchObject({ round: "recruiter_call", state: "scheduled" });
 
     // The next round makes the recruiter-call request moot.
-    mail.processEmail(conn, email({ threadId: "thread-acme-2", receivedAt: new Date() }), cls({ kind: "interview_scheduled", round: "screening" }), "llm", mail.trackedApplications(userId));
-    expect(mail.openActions(userId).some((x) => x.emailId === first.row!.id)).toBe(false);
+    await mail.processEmail(conn, email({ threadId: "thread-acme-2", receivedAt: new Date() }), cls({ kind: "interview_scheduled", round: "screening" }), "llm", await mail.trackedApplications(userId));
+    expect((await mail.openActions(userId)).some((x) => x.emailId === first.row!.id)).toBe(false);
   });
 
-  it("adds applications made elsewhere, linked to the job when it's known", () => {
-    const out = mail.processEmail(
+  it("adds applications made elsewhere, linked to the job when it's known", async () => {
+    const out = await mail.processEmail(
       conn,
       email({ fromAddress: "no-reply@us.greenhouse-mail.io", fromName: "Globex Recruiting" }),
       cls({ kind: "application_received", companyName: "Globex", jobTitle: "Sr Product Manager" }),
       "llm",
-      mail.trackedApplications(userId),
+      await mail.trackedApplications(userId),
     );
     expect(out.created).toMatchObject({ jobId: globexJob, status: "applied" });
-    const row = app(out.created!.id);
+    const row = await app(out.created!.id);
     expect(row).toMatchObject({ source: "email", searchId: pmSearchId });
     expect(row.confirmedAt).toBeTruthy();
 
-    const unknown = mail.processEmail(conn, email({ fromAddress: "careers@initech.com", fromName: "Initech" }), cls({ kind: "rejection", companyName: "Initech", jobTitle: "Staff Engineer" }), "llm", mail.trackedApplications(userId));
+    const unknown = await mail.processEmail(conn, email({ fromAddress: "careers@initech.com", fromName: "Initech" }), cls({ kind: "rejection", companyName: "Initech", jobTitle: "Staff Engineer" }), "llm", await mail.trackedApplications(userId));
     expect(unknown.created).toMatchObject({ jobId: null, status: "rejected", company: "Initech" });
-    expect(app(unknown.created!.id)).toMatchObject({ searchId, jobTitle: "Staff Engineer" });
+    expect(await app(unknown.created!.id)).toMatchObject({ searchId, jobTitle: "Staff Engineer" });
   });
 
-  it("keeps different roles at the same company apart", () => {
-    const product = newApp({ companyName: "Initrode", jobTitle: "Staff Software Engineer, Product Engineering", source: "manual", status: "applied" });
+  it("keeps different roles at the same company apart", async () => {
+    const product = await newApp({ companyName: "Initrode", jobTitle: "Staff Software Engineer, Product Engineering", source: "manual", status: "applied" });
     // A confirmation naming a different role doesn't join that card; it waits to be checked.
-    const other = mail.processEmail(
+    const other = await mail.processEmail(
       conn,
       email({ fromAddress: "no-reply@initrode.com", threadId: "t-initrode-ai" }),
       cls({ kind: "application_received", companyName: "Initrode", jobTitle: "Staff Software Engineer, AI Platform" }),
       "llm",
-      mail.trackedApplications(userId),
+      await mail.trackedApplications(userId),
     );
     expect(other.row?.reviewState).toBe("needs_review");
     expect(other.row?.applicationId).toBeNull();
-    expect(app(product.id).confirmedAt).toBeNull();
+    expect((await app(product.id)).confirmedAt).toBeNull();
 
     // The same role, worded a little differently, still links on its own.
-    const same = mail.processEmail(
+    const same = await mail.processEmail(
       conn,
       email({ fromAddress: "no-reply@initrode.com", threadId: "t-initrode-product" }),
       cls({ kind: "application_received", companyName: "Initrode", jobTitle: "Product Engineering, Staff Software Engineer" }),
       "llm",
-      mail.trackedApplications(userId),
+      await mail.trackedApplications(userId),
     );
     expect(same.row?.applicationId).toBe(product.id);
-    expect(app(product.id).confirmedAt).toBeTruthy();
+    expect((await app(product.id)).confirmedAt).toBeTruthy();
 
     // And a reply in a thread that's already linked never re-asks.
-    const reply = mail.processEmail(
+    const reply = await mail.processEmail(
       conn,
       email({ fromAddress: "recruiter@initrode.com", threadId: "t-initrode-product" }),
       cls({ kind: "interview_request", round: "recruiter_call", companyName: "Initrode", jobTitle: null }),
       "llm",
-      mail.trackedApplications(userId),
+      await mail.trackedApplications(userId),
     );
     expect(reply.row?.applicationId).toBe(product.id);
   });
 
-  it("asks when it isn't sure, and acts once the person confirms", () => {
-    const b1 = newApp({ companyName: "Hooli", jobTitle: "Backend Engineer", source: "manual", status: "applied" });
-    newApp({ companyName: "Hooli", jobTitle: "Frontend Engineer", source: "manual", status: "applied" });
-    const amb = mail.processEmail(conn, email({ fromAddress: "hr@hooli.xyz" }), cls({ kind: "rejection", companyName: "Hooli", jobTitle: null }), "llm", mail.trackedApplications(userId));
+  it("asks when it isn't sure, and acts once the person confirms", async () => {
+    const b1 = await newApp({ companyName: "Hooli", jobTitle: "Backend Engineer", source: "manual", status: "applied" });
+    await newApp({ companyName: "Hooli", jobTitle: "Frontend Engineer", source: "manual", status: "applied" });
+    const amb = await mail.processEmail(conn, email({ fromAddress: "hr@hooli.xyz" }), cls({ kind: "rejection", companyName: "Hooli", jobTitle: null }), "llm", await mail.trackedApplications(userId));
     expect(amb.row?.reviewState).toBe("needs_review");
-    expect(mail.reviewQueue(userId).map((r) => r.emailId)).toContain(amb.row!.id);
-    expect(mail.reviewEmail(userId, amb.row!.id, { type: "assign", applicationId: b1.id })).toBe(true);
-    expect(app(b1.id).status).toBe("rejected");
-    expect(mail.reviewQueue(userId).map((r) => r.emailId)).not.toContain(amb.row!.id);
+    expect((await mail.reviewQueue(userId)).map((r) => r.emailId)).toContain(amb.row!.id);
+    expect(await mail.reviewEmail(userId, amb.row!.id, { type: "assign", applicationId: b1.id })).toBe(true);
+    expect((await app(b1.id)).status).toBe("rejected");
+    expect((await mail.reviewQueue(userId)).map((r) => r.emailId)).not.toContain(amb.row!.id);
 
-    const unsure = mail.processEmail(conn, email({ fromAddress: "x@acme.com" }), cls({ kind: "offer", confidence: 0.4 }), "llm", mail.trackedApplications(userId));
+    const unsure = await mail.processEmail(conn, email({ fromAddress: "x@acme.com" }), cls({ kind: "offer", confidence: 0.4 }), "llm", await mail.trackedApplications(userId));
     expect(unsure.row?.reviewState).toBe("needs_review");
-    const acme = mail.trackedApplications(userId).find((x) => x.jobId === acmeJob)!;
-    expect(app(acme.id).status).toBe("interview");
-    mail.reviewEmail(userId, unsure.row!.id, { type: "confirm" });
-    expect(app(acme.id).status).toBe("offer");
+    const acme = (await mail.trackedApplications(userId)).find((x) => x.jobId === acmeJob)!;
+    expect((await app(acme.id)).status).toBe("interview");
+    await mail.reviewEmail(userId, unsure.row!.id, { type: "confirm" });
+    expect((await app(acme.id)).status).toBe("offer");
   });
 
-  it("lets a manual move win and undo an automatic one", () => {
-    const a = newApp({ companyName: "Umbrella", jobTitle: "Platform Engineer", status: "applied" });
-    setStatus(a.id, "interview", { source: "manual" });
-    const old = mail.processEmail(conn, email({ fromAddress: "x@umbrella.com", receivedAt: new Date(Date.now() - 3 * 86_400_000) }), cls({ kind: "rejection", companyName: "Umbrella", jobTitle: "Platform Engineer" }), "llm", mail.trackedApplications(userId));
+  it("lets a manual move win and undo an automatic one", async () => {
+    const a = await newApp({ companyName: "Umbrella", jobTitle: "Platform Engineer", status: "applied" });
+    await setStatus(a.id, "interview", { source: "manual" });
+    const old = await mail.processEmail(conn, email({ fromAddress: "x@umbrella.com", receivedAt: new Date(Date.now() - 3 * 86_400_000) }), cls({ kind: "rejection", companyName: "Umbrella", jobTitle: "Platform Engineer" }), "llm", await mail.trackedApplications(userId));
     expect(old.row?.applicationId).toBe(a.id);
-    expect(app(a.id).status).toBe("interview");
+    expect((await app(a.id)).status).toBe("interview");
 
-    mail.processEmail(conn, email({ fromAddress: "x@umbrella.com", receivedAt: new Date(Date.now() + 60_000) }), cls({ kind: "rejection", companyName: "Umbrella", jobTitle: "Platform Engineer" }), "llm", mail.trackedApplications(userId));
-    expect(app(a.id).status).toBe("rejected");
-    const ev = applicationEvents(a.id)[0]!;
-    expect(undoEvent(userId, ev.id)).toEqual({ ok: true });
-    expect(app(a.id).status).toBe("interview");
-    expect(undoEvent(otherId, ev.id).ok).toBe(false);
+    await mail.processEmail(conn, email({ fromAddress: "x@umbrella.com", receivedAt: new Date(Date.now() + 60_000) }), cls({ kind: "rejection", companyName: "Umbrella", jobTitle: "Platform Engineer" }), "llm", await mail.trackedApplications(userId));
+    expect((await app(a.id)).status).toBe("rejected");
+    const ev = (await applicationEvents(a.id))[0]!;
+    expect(await undoEvent(userId, ev.id)).toEqual({ ok: true });
+    expect((await app(a.id)).status).toBe("interview");
+    expect((await undoEvent(otherId, ev.id)).ok).toBe(false);
   });
 
-  it("removes an application an email added when that's undone", () => {
-    const out = mail.processEmail(conn, email({ fromAddress: "x@vandelay.com" }), cls({ kind: "application_received", companyName: "Vandelay", jobTitle: "Importer" }), "llm", mail.trackedApplications(userId));
-    const created = applicationEvents(out.created!.id)[0]!;
+  it("removes an application an email added when that's undone", async () => {
+    const out = await mail.processEmail(conn, email({ fromAddress: "x@vandelay.com" }), cls({ kind: "application_received", companyName: "Vandelay", jobTitle: "Importer" }), "llm", await mail.trackedApplications(userId));
+    const created = (await applicationEvents(out.created!.id))[0]!;
     expect(created.fromStatus).toBeNull();
-    expect(undoEvent(userId, created.id)).toMatchObject({ ok: true, removed: true });
-    expect(getDb().select().from(schema.application).where(eq(schema.application.id, out.created!.id)).get()).toBeUndefined();
+    expect(await undoEvent(userId, created.id)).toMatchObject({ ok: true, removed: true });
+    expect(await one(getDb().select().from(schema.application).where(eq(schema.application.id, out.created!.id)))).toBeUndefined();
   });
 
-  it("keeps only ids for unrelated mail, and keeps people's email apart", () => {
-    const out = mail.processEmail(conn, email({ subject: "Sale", text: "50% off" }), cls({ jobRelated: false, kind: "unrelated" }), "llm", []);
+  it("keeps only ids for unrelated mail, and keeps people's email apart", async () => {
+    const out = await mail.processEmail(conn, email({ subject: "Sale", text: "50% off" }), cls({ jobRelated: false, kind: "unrelated" }), "llm", []);
     expect(out.row).toBeNull();
-    const stored = getDb().select().from(schema.emailMessage).where(eq(schema.emailMessage.providerId, `m${seq}`)).get()!;
+    const stored = (await one(getDb().select().from(schema.emailMessage).where(eq(schema.emailMessage.providerId, `m${seq}`))))!;
     expect(stored).toMatchObject({ kind: "unrelated", subject: null, snippet: null, fromAddress: null });
 
-    const theirs = mail.processEmail(otherConn, email({ fromAddress: "x@acme.com", actionNeeded: undefined } as never), cls({ kind: "interview_request", action: { needed: true, type: "reply", text: "Reply", dueAt: null } }), "llm", mail.trackedApplications(otherId));
-    expect(mail.openActions(userId).some((a) => a.emailId === theirs.row?.id)).toBe(false);
-    expect(mail.reviewQueue(userId).some((r) => r.emailId === theirs.row?.id)).toBe(false);
-    expect(mail.reviewEmail(userId, theirs.row!.id, { type: "dismiss" })).toBe(false);
+    const theirs = await mail.processEmail(otherConn, email({ fromAddress: "x@acme.com", actionNeeded: undefined } as never), cls({ kind: "interview_request", action: { needed: true, type: "reply", text: "Reply", dueAt: null } }), "llm", await mail.trackedApplications(otherId));
+    expect((await mail.openActions(userId)).some((a) => a.emailId === theirs.row?.id)).toBe(false);
+    expect((await mail.reviewQueue(userId)).some((r) => r.emailId === theirs.row?.id)).toBe(false);
+    expect(await mail.reviewEmail(userId, theirs.row!.id, { type: "dismiss" })).toBe(false);
   });
 });
 
@@ -489,7 +492,7 @@ describe("a full check", () => {
     eml("3.eml", "Shop <news@shop.com>", "Big sale", "Everything must go", "Fri, 11 Sep 2026 10:00:00 +0000", "List-Id: <promo.shop.com>\r\n");
     eml("4.eml", "Job Companion <digest@jc.dev>", "3 new matches", "Jobs", "Fri, 11 Sep 2026 11:00:00 +0000", "X-Job-Companion: digest\r\n");
 
-    const fakeConn = getDb().insert(schema.mailboxConnection).values({ userId, provider: "imap", address: "sam+fake@example.com", secret: encryptSecret("x"), imapHost: "fake.local", imapPort: 993 }).returning().get();
+    const fakeConn = await returned(getDb().insert(schema.mailboxConnection).values({ userId, provider: "imap", address: "sam+fake@example.com", secret: encryptSecret("x"), imapHost: "fake.local", imapPort: 993 }).returning());
     parseQueue.push(
       cls({ kind: "application_received", companyName: "Soylent", jobTitle: "Staff Engineer" }),
       cls({ kind: "rejection", companyName: "Soylent", jobTitle: "Staff Engineer" }),
@@ -499,9 +502,9 @@ describe("a full check", () => {
     expect(summary).toMatchObject({ listed: 4, candidates: 2, processed: 2, jobEmails: 2, created: 1 });
     expect(calls).toHaveLength(2); // the sale and our own digest never reached the AI
     expect(String(calls[0]!.messages[0]!.content)).toContain("Thank you for applying to Soylent");
-    const soylent = mail.trackedApplications(userId).find((a) => a.company === "Soylent")!;
+    const soylent = (await mail.trackedApplications(userId)).find((a) => a.company === "Soylent")!;
     expect(soylent.status).toBe("rejected");
-    const after = getDb().select().from(schema.mailboxConnection).where(eq(schema.mailboxConnection.id, fakeConn.id)).get()!;
+    const after = (await one(getDb().select().from(schema.mailboxConnection).where(eq(schema.mailboxConnection.id, fakeConn.id))))!;
     expect(after).toMatchObject({ backfillDone: true, progress: null, lastError: null, status: "active" });
 
     const again = await mail.syncConnection(fakeConn.id);

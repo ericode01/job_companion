@@ -10,3 +10,4 @@ export * from "./actor";
 export * from "./auth";
 export * from "./profile";
 export * from "./secrets";
+export * from "./storage";

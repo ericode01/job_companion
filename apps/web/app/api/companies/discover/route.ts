@@ -1,4 +1,4 @@
-import { getDb, schema } from "@jd/core/db";
+import { getDb, one, schema } from "@jd/core/db";
 import { AI_KEY_HINT, hasApiKey } from "@jd/llm";
 import { briefFor, enqueueDiscovery, latestDiscoveryRuns } from "@jd/research";
 import { eq } from "drizzle-orm";
@@ -7,7 +7,7 @@ import { z } from "zod";
 import { json, readJson, withAdmin } from "@/lib/api";
 
 export function GET(req: Request) {
-  return withAdmin(req, () => json({ runs: latestDiscoveryRuns(5), hasApiKey: hasApiKey() }));
+  return withAdmin(req, async () => json({ runs: await latestDiscoveryRuns(5), hasApiKey: hasApiKey() }));
 }
 
 const Body = z
@@ -21,10 +21,10 @@ export function POST(req: Request) {
     const { prompt, searchId } = Body.parse(await readJson(req));
     let brief = prompt ?? "";
     if (searchId) {
-      const search = getDb().select().from(schema.savedSearch).where(eq(schema.savedSearch.id, searchId)).get();
+      const search = await one(getDb().select().from(schema.savedSearch).where(eq(schema.savedSearch.id, searchId)));
       if (!search) return NextResponse.json({ error: "That saved search no longer exists." }, { status: 404 });
       brief = prompt ? `${briefFor(search.filter, search.rawQuery)} ${prompt}` : briefFor(search.filter, search.rawQuery);
     }
-    return json({ run: enqueueDiscovery(brief, "manual", searchId ?? null, user.id) });
+    return json({ run: await enqueueDiscovery(brief, "manual", searchId ?? null, user.id) });
   });
 }

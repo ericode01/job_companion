@@ -1,5 +1,5 @@
 import { getUserSettings, type Comp, type LocationType, type SearchFilter } from "@jd/core";
-import { getDb, schema } from "@jd/core/db";
+import { getDb, one, schema } from "@jd/core/db";
 import { and, eq, gte, isNull, like, or, sql } from "drizzle-orm";
 import { matchJob, type RuleResult } from "./match";
 import { normalizeTitle } from "./text";
@@ -26,16 +26,16 @@ export interface SearchResult {
 }
 
 /** A person's "never show" lists; empty when the search isn't anyone's (CLI use). */
-export function exclusionsFor(userId: number | null | undefined): { excludedCompanies: string[]; excludedTitleKeywords: string[] } {
+export async function exclusionsFor(userId: number | null | undefined): Promise<{ excludedCompanies: string[]; excludedTitleKeywords: string[] }> {
   if (!userId) return { excludedCompanies: [], excludedTitleKeywords: [] };
-  const { excludedCompanies, excludedTitleKeywords } = getUserSettings(userId, "search");
+  const { excludedCompanies, excludedTitleKeywords } = await getUserSettings(userId, "search");
   return { excludedCompanies, excludedTitleKeywords };
 }
 
 /** Applies the rule filter over open jobs, records matches, and returns deduped results (newest first). */
-export function runSearch(searchId: number | null, filter: SearchFilter, userId?: number | null): SearchResult[] {
+export async function runSearch(searchId: number | null, filter: SearchFilter, userId?: number | null): Promise<SearchResult[]> {
   const db = getDb();
-  const { excludedCompanies, excludedTitleKeywords } = exclusionsFor(userId);
+  const { excludedCompanies, excludedTitleKeywords } = await exclusionsFor(userId);
   const now = new Date();
 
   // Cheap SQL narrowing on the most selective keyword group; exact matching happens in matchJob.
@@ -48,7 +48,7 @@ export function runSearch(searchId: number | null, filter: SearchFilter, userId?
       ? or(isNull(job.postedAt), gte(job.postedAt, new Date(now.getTime() - filter.postedWithinDays * 86_400_000)))
       : undefined;
 
-  const rows = db
+  const rows = await db
     .select({
       jobId: job.id,
       title: job.title,
@@ -68,8 +68,7 @@ export function runSearch(searchId: number | null, filter: SearchFilter, userId?
     })
     .from(job)
     .innerJoin(company, eq(company.id, job.companyId))
-    .where(and(isNull(job.closedAt), titleClause, ageClause))
-    .all();
+    .where(and(isNull(job.closedAt), titleClause, ageClause));
 
   const passed: { row: (typeof rows)[number]; rule: RuleResult }[] = [];
   for (const row of rows) {
@@ -78,11 +77,11 @@ export function runSearch(searchId: number | null, filter: SearchFilter, userId?
   }
 
   if (searchId !== null && passed.length) {
-    db.transaction((tx) => {
+    await db.transaction(async (tx) => {
       for (const { row } of passed) {
-        tx.insert(jobMatch).values({ jobId: row.jobId, searchId, rulePass: true }).onConflictDoNothing().run();
+        await tx.insert(jobMatch).values({ jobId: row.jobId, searchId, rulePass: true }).onConflictDoNothing();
       }
-      tx.update(schema.savedSearch).set({ lastRunAt: now }).where(eq(schema.savedSearch.id, searchId)).run();
+      await tx.update(schema.savedSearch).set({ lastRunAt: now }).where(eq(schema.savedSearch.id, searchId));
     });
   }
 
@@ -122,9 +121,9 @@ export function runSearch(searchId: number | null, filter: SearchFilter, userId?
   return [...grouped.values()].sort((a, b) => ts(b) - ts(a));
 }
 
-export function countOpenJobs(): { jobs: number; companies: number } {
+export async function countOpenJobs(): Promise<{ jobs: number; companies: number }> {
   const db = getDb();
-  const j = db.select({ n: sql<number>`count(*)` }).from(job).where(isNull(job.closedAt)).get();
-  const c = db.select({ n: sql<number>`count(*)` }).from(company).where(eq(company.enabled, true)).get();
+  const j = await one(db.select({ n: sql<number>`count(*)`.mapWith(Number) }).from(job).where(isNull(job.closedAt)));
+  const c = await one(db.select({ n: sql<number>`count(*)`.mapWith(Number) }).from(company).where(eq(company.enabled, true)));
   return { jobs: j?.n ?? 0, companies: c?.n ?? 0 };
 }

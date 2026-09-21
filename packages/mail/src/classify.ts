@@ -57,9 +57,9 @@ export async function classifyEmail(
   timeZone = "UTC",
   opts: { model?: string } = {},
 ): Promise<{ result: EmailClassification; by: "llm" | "rules" }> {
-  const setting = opts.model ?? getSettings("ai").models.emailClassify;
+  const setting = opts.model ?? (await getSettings("ai")).models.emailClassify;
   if (!hasKeyFor(setting)) return { result: classifyWithRules(email), by: "rules" };
-  assertBudget({ background: true });
+  await assertBudget({ background: true });
   const { client, model } = forModel(setting);
   const response = await client.messages.create({
     model,
@@ -73,7 +73,7 @@ export async function classifyEmail(
     ],
     output_config: { format: zodOutputFormat(EmailClassificationSchema) },
   });
-  recordMessageUsage("email_classify", setting, response);
+  await recordMessageUsage("email_classify", setting, response);
   if (response.stop_reason === "refusal") return { result: classifyWithRules(email), by: "rules" };
   try {
     return { result: normalize(parseStructured(response, EmailClassificationSchema, "classification"), apps), by: "llm" };

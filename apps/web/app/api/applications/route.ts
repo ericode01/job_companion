@@ -1,6 +1,6 @@
 import { recordCreated, setStatus } from "@jd/apply";
 import { APPLICATION_STATUSES } from "@jd/core";
-import { getDb, schema } from "@jd/core/db";
+import { getDb, one, returned, schema } from "@jd/core/db";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { json, readJson, withUser } from "@/lib/api";
@@ -21,29 +21,30 @@ export function PUT(req: Request) {
     const db = getDb();
     const mine = and(eq(schema.application.userId, user.id), eq(schema.application.jobId, jobId));
     if (status === null) {
-      db.delete(schema.application).where(mine).run();
+      await db.delete(schema.application).where(mine);
       return json(null);
     }
-    const existing = db.select().from(schema.application).where(mine).get();
+    const existing = await one(db.select().from(schema.application).where(mine));
     if (existing) {
-      if (notes !== undefined) db.update(schema.application).set({ notes, updatedAt: new Date() }).where(eq(schema.application.id, existing.id)).run();
-      return json(setStatus(existing.id, status, { source: "manual" }));
+      if (notes !== undefined) await db.update(schema.application).set({ notes, updatedAt: new Date() }).where(eq(schema.application.id, existing.id));
+      return json(await setStatus(existing.id, status, { source: "manual" }));
     }
-    const dashboard = searchId ? getDashboard(user.id, searchId) : null;
-    const row = db
-      .insert(schema.application)
-      .values({
-        userId: user.id,
-        jobId,
-        searchId: dashboard?.id ?? null,
-        status,
-        source: "app",
-        appliedAt: status === "applied" ? new Date() : null,
-        notes: notes ?? null,
-      })
-      .returning()
-      .get();
-    recordCreated(row.id, status, "manual");
+    const dashboard = searchId ? await getDashboard(user.id, searchId) : null;
+    const row = await returned(
+      db
+        .insert(schema.application)
+        .values({
+          userId: user.id,
+          jobId,
+          searchId: dashboard?.id ?? null,
+          status,
+          source: "app",
+          appliedAt: status === "applied" ? new Date() : null,
+          notes: notes ?? null,
+        })
+        .returning(),
+    );
+    await recordCreated(row.id, status, "manual");
     return json(row);
   });
 }

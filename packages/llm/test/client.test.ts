@@ -1,10 +1,8 @@
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 
-process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "jd-llm-"));
+const { useTestDb } = await import("@jd/core/testing");
+await useTestDb("jd-llm-");
 
 const { AI_KEY_HINT, forModel, hasApiKey, hasKeyFor, LlmOutputError, LlmUnavailableError, parseModel, parseStructured, routingPrefs } = await import("../src/client");
 const { saveSettings } = await import("@jd/core");
@@ -65,33 +63,33 @@ describe("picking a client", () => {
 });
 
 describe("the fields OpenRouter needs and the SDK doesn't know about", () => {
-  it("pins no-logging providers on every routed request", () => {
-    const body = routingPrefs({ model: "deepseek/deepseek-v4-flash", messages: [] });
+  it("pins no-logging providers on every routed request", async () => {
+    const body = await routingPrefs({ model: "deepseek/deepseek-v4-flash", messages: [] });
     expect(body.provider).toMatchObject({ data_collection: "deny", require_parameters: true });
   });
 
-  it("asks for the auto-router only when the model is the auto-router", () => {
-    expect(routingPrefs({ model: "openrouter/auto", messages: [] }).plugins).toEqual([{ id: "auto-router", cost_tier: "low" }]);
-    expect(routingPrefs({ model: "deepseek/deepseek-v4-flash", messages: [] }).plugins).toBeUndefined();
+  it("asks for the auto-router only when the model is the auto-router", async () => {
+    expect((await routingPrefs({ model: "openrouter/auto", messages: [] })).plugins).toEqual([{ id: "auto-router", cost_tier: "low" }]);
+    expect((await routingPrefs({ model: "deepseek/deepseek-v4-flash", messages: [] })).plugins).toBeUndefined();
   });
 
-  it("carries the admin's cost tier and price ceiling", () => {
-    saveSettings("ai", { autoRouter: { costTier: "medium", maxPromptUsd: 0.25, maxCompletionUsd: null, excludedModels: ["openai/*"] } });
-    const body = routingPrefs({ model: "openrouter/auto", messages: [] });
+  it("carries the admin's cost tier and price ceiling", async () => {
+    await saveSettings("ai", { autoRouter: { costTier: "medium", maxPromptUsd: 0.25, maxCompletionUsd: null, excludedModels: ["openai/*"] } });
+    const body = await routingPrefs({ model: "openrouter/auto", messages: [] });
     expect(body.plugins).toEqual([{ id: "auto-router", cost_tier: "medium", excluded_models: ["openai/*"] }]);
     // A null ceiling is "no ceiling", so it must not be sent as a bound.
     expect(body.provider).toMatchObject({ max_price: { prompt: "0.25" } });
     expect((body.provider as { max_price: Record<string, string> }).max_price.completion).toBeUndefined();
-    saveSettings("ai", { autoRouter: {} });
+    await saveSettings("ai", { autoRouter: {} });
   });
 
-  it("pins the temperature when a schema is being filled, and leaves free text alone", () => {
+  it("pins the temperature when a schema is being filled, and leaves free text alone", async () => {
     // Open-weight models default near 1.0, which invents fields.
-    expect(routingPrefs({ model: "x", output_config: { format: {} } }).temperature).toBe(0);
-    expect(routingPrefs({ model: "x", output_config: { effort: "medium" } }).temperature).toBeUndefined();
-    expect(routingPrefs({ model: "x" }).temperature).toBeUndefined();
+    expect((await routingPrefs({ model: "x", output_config: { format: {} } })).temperature).toBe(0);
+    expect((await routingPrefs({ model: "x", output_config: { effort: "medium" } })).temperature).toBeUndefined();
+    expect((await routingPrefs({ model: "x" })).temperature).toBeUndefined();
     // An explicit temperature is the caller's business.
-    expect(routingPrefs({ model: "x", output_config: { format: {} }, temperature: 0.7 }).temperature).toBe(0.7);
+    expect((await routingPrefs({ model: "x", output_config: { format: {} }, temperature: 0.7 })).temperature).toBe(0.7);
   });
 });
 

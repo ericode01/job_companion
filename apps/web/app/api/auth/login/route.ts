@@ -21,7 +21,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "That email and password don't match." }, { status: 401 });
     }
     clearLoginFailures(keys);
-    const { token, expiresAt } = createSession(user.id);
+    const { token, expiresAt } = await createSession(user.id);
     await setSessionCookie(token, expiresAt);
     return NextResponse.json({ user: toPublicUser(user) });
   } catch (err) {

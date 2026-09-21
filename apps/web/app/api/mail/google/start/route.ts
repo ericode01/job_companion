@@ -8,9 +8,9 @@ const GOOGLE_STATE_COOKIE = "jd_gstate";
 
 /** Starts Google sign-in for read-only Gmail access. */
 export function GET(req: Request) {
-  return withUser(req, (user) => {
+  return withUser(req, async (user) => {
     const back = (error: string) => NextResponse.redirect(`${appOrigin()}/mailbox?error=${encodeURIComponent(error)}`);
-    if (!getSettings("mailSync").enabled) return back("Mailbox sync is turned off on this server.");
+    if (!(await getSettings("mailSync")).enabled) return back("Mailbox sync is turned off on this server.");
     if (!googleConfigured()) return back("Google sign-in isn't set up on this server yet. Ask your admin, or use an app password.");
     const url = new URL(req.url);
     const days = Number(url.searchParams.get("days"));

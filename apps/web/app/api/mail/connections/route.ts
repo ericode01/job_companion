@@ -19,18 +19,18 @@ import { allowAttempt } from "@/lib/rate-limit";
 
 /** Your mailboxes, what they've found, and what's waiting for you to check. */
 export function GET(req: Request) {
-  return withUser(req, (user) => {
-    const s = getSettings("mailSync");
+  return withUser(req, async (user) => {
+    const s = await getSettings("mailSync");
     return json({
       enabled: s.enabled,
       google: googleConfigured(),
       allowImap: s.allowImap,
       testMailbox: fakeMailAllowed(),
-      connections: listConnections(user.id).map((c) => ({ ...toPublic(c), stats: connectionStats(user.id, c.id) })),
-      review: reviewQueue(user.id),
+      connections: await Promise.all((await listConnections(user.id)).map(async (c) => ({ ...toPublic(c), stats: await connectionStats(user.id, c.id) }))),
+      review: await reviewQueue(user.id),
       // "Is it still working?" is answered better by what it just did than by a status pill.
-      changes: emailChangesSince(user.id, new Date(Date.now() - 7 * 86_400_000)).slice(0, 5),
-      applications: trackedApplications(user.id).map((a) => ({ id: a.id, label: `${a.company} · ${a.title}` })),
+      changes: (await emailChangesSince(user.id, new Date(Date.now() - 7 * 86_400_000))).slice(0, 5),
+      applications: (await trackedApplications(user.id)).map((a) => ({ id: a.id, label: `${a.company} · ${a.title}` })),
     });
   });
 }
@@ -46,7 +46,7 @@ const Imap = z.object({
 /** Connects a mailbox by IMAP with an app password, after checking that it signs in. */
 export function POST(req: Request) {
   return withUser(req, async (user) => {
-    const s = getSettings("mailSync");
+    const s = await getSettings("mailSync");
     if (!s.enabled || !s.allowImap) return json({ error: "Connecting by app password is turned off on this server." }, { status: 403 });
     const body = Imap.parse(await readJson(req));
     if (UNSUPPORTED_DOMAINS.includes(domainOf(body.address))) {

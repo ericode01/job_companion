@@ -33,7 +33,7 @@ export async function GET(req: Request) {
   }
   try {
     const grant = await exchangeCode(code, verifier);
-    runAs(user.id, () => saveGmailConnection(user.id, { address: grant.address, refreshToken: grant.refreshToken, backfillDays: Number(days) || 90 }));
+    await runAs(user.id, () => saveGmailConnection(user.id, { address: grant.address, refreshToken: grant.refreshToken, backfillDays: Number(days) || 90 }));
     return done({ connected: grant.address });
   } catch (err) {
     return done({ error: err instanceof Error ? err.message : "Google sign-in failed." });

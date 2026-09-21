@@ -7,12 +7,13 @@ Design: [docs/DESIGN.md](docs/DESIGN.md).
 
 ## Run it locally
 
-Requires Node 22+ and pnpm 10+.
+Requires Node 22+, pnpm 10+ and Docker (for the local Postgres).
 
 ```bash
 pnpm install
 cp .env.example .env.local   # add ANTHROPIC_API_KEY and/or OPENROUTER_API_KEY
-pnpm setup                   # create the DB, import ~275 companies, pull their open jobs (~1 min)
+docker compose up -d         # Postgres on 127.0.0.1:54317, which the app uses by default
+pnpm setup                   # create the tables, import ~275 companies, pull their open jobs (~1 min)
 pnpm dev                     # http://127.0.0.1:4317
 ```
 
@@ -46,17 +47,21 @@ APP_URL=https://jobs.example.com pnpm --filter @jd/extension build
 
 ## Hosting
 
-The app is one Node process for the web app plus one for the worker, with SQLite on disk, so a single small VM with a persistent volume is enough.
+The app is one Node process for the web app plus one for the worker, a Postgres database, and a bucket for uploaded files. It holds nothing on local disk that matters, so the VM is disposable. On Google Cloud:
+
+- **Cloud SQL for PostgreSQL 17**, private IP only (no public IP), with automated backups and point-in-time recovery. The smallest shared-core tier is plenty for a handful of people.
+- **A GCE VM in the same region and VPC** (e2-small is enough), so every query stays on the private network. Give it a service account with `roles/cloudsql.client` and object admin on the bucket; the app uses it directly, so there's no key file.
+- **A GCS bucket** in the same region, uniform bucket-level access, no public access.
 
 1. Set `APP_ORIGIN` to the public https address (see `.env.example`). It controls the allowed Host/Origin, secure cookies, links in emails and invites, the Google sign-in redirect, and the extension build. Also set `SECRET_KEY` (`openssl rand -base64 32`), which encrypts connected mailboxes' credentials.
-2. Build and run the container:
+2. Build and run the container on the VM:
 
    ```bash
    docker build --build-arg APP_ORIGIN=https://jobs.example.com -t job-companion .
-   docker run -d --name job-companion -p 127.0.0.1:4317:4317 -v jc-data:/data --env-file .env.production job-companion
+   docker run -d --name job-companion -p 127.0.0.1:4317:4317 --env-file .env.production job-companion
    ```
 
-   `.env.production` holds `APP_ORIGIN`, `SECRET_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, mail credentials, and optionally `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`. The database and uploaded resumes live in the `jc-data` volume; back it up.
+   `.env.production` holds `APP_ORIGIN`, `SECRET_KEY`, `DATABASE_URL` (the Cloud SQL private address), `GCS_BUCKET`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, mail credentials, and optionally `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`. Secret Manager is a good home for them. The app creates its tables on first start.
 
 3. Put an HTTPS reverse proxy in front. With Caddy, the whole config is:
 
@@ -70,7 +75,7 @@ The app is one Node process for the web app plus one for the worker, with SQLite
 
 Without Docker: `pnpm install && pnpm --filter @jd/web build && APP_URL=$APP_ORIGIN pnpm --filter @jd/extension build`, then `HOST=127.0.0.1 PORT=4317 pnpm serve` under a process manager.
 
-To move an existing local install to a server, copy `data/` (the `app.db` file and `files/`) into the volume before the first start.
+**Moving an install that still runs on SQLite** (`data/app.db`): stop it, keep a copy of `data/`, then with `DATABASE_URL` pointing at an empty database and `GCS_BUCKET` set, run `pnpm db:copy-sqlite`. It copies every table in one transaction, moves the resume PDFs into the bucket, then reads every row back and compares it with the original, and refuses a database that already has data. Start the new version once it reports every row identical. Until anyone writes to Postgres, the old version against the untouched `data/` is your rollback.
 
 ## Commands
 
@@ -89,6 +94,8 @@ To move an existing local install to a server, copy `data/` (the `app.db` file a
 | `pnpm test` | Unit tests |
 | `pnpm typecheck` | Typecheck all packages and scripts |
 | `pnpm db:generate` | Generate a migration after editing `packages/core/src/db/schema.ts` |
+| `pnpm db:migrate` | Create or update the tables (the app also does this when it starts) |
+| `pnpm db:copy-sqlite [--verify]` | Copy an old `data/app.db` into Postgres and check every row; `--verify` only checks |
 
 ## Where jobs come from
 
@@ -140,5 +147,5 @@ packages/mail       mailbox sync: Gmail (read-only OAuth) and IMAP readers, pref
 packages/digest     per-person daily email: replies needed, pipeline changes, what's new; HTML/text rendering, SMTP or Resend
 apps/extension      Chrome MV3 extension: bridge, background worker, form engine, review panel
 scripts/            CLI entry points
-data/               SQLite DB and uploaded files (gitignored)
+data/               local file store when GCS_BUCKET is unset (gitignored)
 ```

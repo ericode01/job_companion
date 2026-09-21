@@ -15,7 +15,7 @@ const Patch = z.union([
 export function PATCH(req: Request, { params }: Ctx) {
   return withAdmin(req, async (me) => {
     const id = Number((await params).id);
-    const target = getUser(id);
+    const target = await getUser(id);
     if (!target) return notFound();
     const body = Patch.parse(await readJson(req));
 
@@ -26,13 +26,13 @@ export function PATCH(req: Request, { params }: Ctx) {
       return json({ temporaryPassword: temporary });
     }
     const losesAdmin = ("role" in body && body.role === "member") || ("disabled" in body && body.disabled);
-    if (losesAdmin && target.role === "admin" && !target.disabled && activeAdminCount() <= 1) {
+    if (losesAdmin && target.role === "admin" && !target.disabled && await activeAdminCount() <= 1) {
       return NextResponse.json({ error: "There must be at least one active admin." }, { status: 409 });
     }
     if ("disabled" in body && body.disabled && id === me.id) {
       return NextResponse.json({ error: "You can't disable your own account." }, { status: 409 });
     }
-    updateUser(id, body);
+    await updateUser(id, body);
     return json({ ok: true });
   });
 }

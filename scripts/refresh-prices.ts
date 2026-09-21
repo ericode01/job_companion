@@ -2,7 +2,8 @@
  * Refreshes the model price snapshot from OpenRouter's public catalogue.
  *
  * Writes packages/core/src/model-prices.json, which is committed: the app must be able to cost a
- * call without a network round trip (recordUsage is synchronous, and budget caps depend on it).
+ * call without a network round trip (recordUsage prices each call as it records it, and budget caps
+ * depend on that).
  * At runtime the worker keeps a fresher copy in data/; this file is the floor under that.
  *
  *   pnpm tsx scripts/refresh-prices.ts

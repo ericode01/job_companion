@@ -1,6 +1,6 @@
 import { claimTask, completeTask, enqueueTask, failTask, getSettings, hasRunnableTasks, requeueInterruptedTasks, runAs, type Task } from "@jd/core";
 import type { TaskKind } from "@jd/core/schema";
-import { getDb, schema } from "@jd/core/db";
+import { getDb, one, schema } from "@jd/core/db";
 import { BudgetExceededError, describeLlmError, hasApiKey, isRetryableLlmError, LlmUnavailableError } from "@jd/llm";
 import { and, eq, inArray } from "drizzle-orm";
 import { getCompanyProfile, isProfileStale, researchCompany } from "./company";
@@ -71,70 +71,70 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
  * worker can attribute AI spend and apply that person's budget.
  */
 
-export function enqueueResumeParse(userId: number, resumeId: number) {
-  return enqueueTask("parse_resume", `resume:${resumeId}`, { userId, resumeId }, { background: false, priority: 20 });
+export async function enqueueResumeParse(userId: number, resumeId: number) {
+  return await enqueueTask("parse_resume", `resume:${resumeId}`, { userId, resumeId }, { background: false, priority: 20 });
 }
 
-export function enqueueTailorResume(userId: number, jobId: number) {
-  return enqueueTask("tailor_resume", tailorKey(userId, jobId), { userId, jobId }, { background: false, priority: 20 });
+export async function enqueueTailorResume(userId: number, jobId: number) {
+  return await enqueueTask("tailor_resume", tailorKey(userId, jobId), { userId, jobId }, { background: false, priority: 20 });
 }
 
 export const tailorKey = (userId: number, jobId: number) => `tailor:${userId}:${jobId}`;
 
-export function enqueueCoverLetter(userId: number, applicationId: number) {
-  return enqueueTask("cover_letter", `application:${applicationId}`, { userId, applicationId }, { background: false, priority: 20 });
+export async function enqueueCoverLetter(userId: number, applicationId: number) {
+  return await enqueueTask("cover_letter", `application:${applicationId}`, { userId, applicationId }, { background: false, priority: 20 });
 }
 
 /** Kicks off a "find me more companies" run and returns its row so the UI can follow it. */
-export function enqueueDiscovery(prompt: string, trigger: "manual" | "schedule", searchId: number | null, startedBy: number | null = null) {
-  const run = startDiscoveryRun(prompt, trigger, searchId, startedBy);
-  enqueueTask("discover_companies", `discovery:${run.id}`, { userId: startedBy, runId: run.id }, { background: trigger === "schedule" });
+export async function enqueueDiscovery(prompt: string, trigger: "manual" | "schedule", searchId: number | null, startedBy: number | null = null) {
+  const run = await startDiscoveryRun(prompt, trigger, searchId, startedBy);
+  await enqueueTask("discover_companies", `discovery:${run.id}`, { userId: startedBy, runId: run.id }, { background: trigger === "schedule" });
   kickWorker();
   return run;
 }
 
 /** fresh: ignore cached notes (explicit Refresh). Retries after a failure reuse notes by default. */
-export function enqueueCompanyResearch(companyId: number, background: boolean, fresh = false, userId: number | null = null) {
-  return enqueueTask("research_company", `company:${companyId}`, { userId, companyId, reuseNotes: !fresh }, { background });
+export async function enqueueCompanyResearch(companyId: number, background: boolean, fresh = false, userId: number | null = null) {
+  return await enqueueTask("research_company", `company:${companyId}`, { userId, companyId, reuseNotes: !fresh }, { background });
 }
 
 /**
  * Called when you open a job: analysis always, research if enabled and stale, fit if a parsed resume exists.
  * No-ops without an API key.
  */
-export function prepareJob(userId: number, jobId: number): void {
+export async function prepareJob(userId: number, jobId: number): Promise<void> {
   if (!hasApiKey()) return;
   const db = getDb();
-  const j = db.select({ companyId: schema.job.companyId, contentHash: schema.job.contentHash }).from(schema.job).where(eq(schema.job.id, jobId)).get();
+  const j = await one(db.select({ companyId: schema.job.companyId, contentHash: schema.job.contentHash }).from(schema.job).where(eq(schema.job.id, jobId)));
   if (!j) return;
-  const analysis = getJobAnalysis(jobId);
+  const analysis = await getJobAnalysis(jobId);
   if (!analysis || analysis.contentHash !== j.contentHash) {
-    enqueueTask("analyze_job", `job:${jobId}`, { userId, jobId }, { background: false });
+    await enqueueTask("analyze_job", `job:${jobId}`, { userId, jobId }, { background: false });
   }
-  if (getSettings("research").researchOnOpen && isProfileStale(getCompanyProfile(j.companyId))) {
-    enqueueCompanyResearch(j.companyId, false, false, userId);
+  if ((await getSettings("research")).researchOnOpen && await isProfileStale(await getCompanyProfile(j.companyId))) {
+    await enqueueCompanyResearch(j.companyId, false, false, userId);
   }
-  enqueueFitScores(userId, [jobId], false);
+  await enqueueFitScores(userId, [jobId], false);
   kickWorker();
 }
 
 /** Queues fit scoring for jobs not yet scored against the current resume. */
-export function enqueueFitScores(userId: number, jobIds: number[], background: boolean): number {
+export async function enqueueFitScores(userId: number, jobIds: number[], background: boolean): Promise<number> {
   if (!hasApiKey() || jobIds.length === 0) return 0;
-  const resume = currentMasterResume(userId);
+  const resume = await currentMasterResume(userId);
   if (!resume || resume.parseStatus !== "done") return 0;
   const scored = new Set(
-    getDb()
-      .select({ jobId: schema.jobFit.jobId })
-      .from(schema.jobFit)
-      .where(and(eq(schema.jobFit.resumeHash, resume.sourceHash), inArray(schema.jobFit.jobId, jobIds)))
-      .all()
-      .map((r) => r.jobId),
+    (
+      await getDb()
+        .select({ jobId: schema.jobFit.jobId })
+        .from(schema.jobFit)
+        .where(and(eq(schema.jobFit.resumeHash, resume.sourceHash), inArray(schema.jobFit.jobId, jobIds)))
+    ).map((r) => r.jobId),
   );
   let queued = 0;
   for (const jobId of jobIds) {
     if (scored.has(jobId)) continue;
-    enqueueTask("score_fit", `fit:${jobId}:${resume.sourceHash}`, { userId, jobId, resumeId: resume.id }, { background });
+    await enqueueTask("score_fit", `fit:${jobId}:${resume.sourceHash}`, { userId, jobId, resumeId: resume.id }, { background });
     queued++;
   }
   if (queued) kickWorker();
@@ -155,19 +155,19 @@ async function runOne(t: Task): Promise<void> {
       runAs(userId, () => HANDLERS[t.kind]!(t.payload, { background: t.background })),
       TIMEOUT_MS[t.kind],
     );
-    completeTask(t.id);
+    await completeTask(t.id);
     console.log(`${label} done in ${((Date.now() - started) / 1000).toFixed(1)}s`);
   } catch (err) {
     const message = describeLlmError(err);
     console.warn(`${label} failed after ${((Date.now() - started) / 1000).toFixed(1)}s: ${message}`);
     if (err instanceof BudgetExceededError) {
       // Leave it queued; retry in an hour in case the cap was raised or the day rolled over.
-      failTask(t.id, message, new Date(Date.now() + 3_600_000));
+      await failTask(t.id, message, new Date(Date.now() + 3_600_000));
     } else if (!(err instanceof LlmUnavailableError) && (isRetryableLlmError(err) || err instanceof TaskTimeoutError) && t.attempts < MAX_ATTEMPTS) {
-      failTask(t.id, message, new Date(Date.now() + 30_000 * 2 ** (t.attempts - 1)));
+      await failTask(t.id, message, new Date(Date.now() + 30_000 * 2 ** (t.attempts - 1)));
     } else {
-      failTask(t.id, message);
-      if (t.kind === "parse_resume") markResumeParseFailed(Number(t.payload.resumeId), message);
+      await failTask(t.id, message);
+      if (t.kind === "parse_resume") await markResumeParseFailed(Number(t.payload.resumeId), message);
     }
   }
 }
@@ -177,18 +177,24 @@ async function runOne(t: Task): Promise<void> {
  * the Next.js server: long streaming API calls stalled there, and dev reloads interrupt them.
  * Safe to call repeatedly.
  */
-export function startWorker(opts: { pollMs?: number } = {}): void {
+export async function startWorker(opts: { pollMs?: number } = {}): Promise<void> {
   if (g.__jdWorker?.started) return;
-  requeueInterruptedTasks();
+  await requeueInterruptedTasks();
   const state = { running: LANES.map(() => 0), wake: () => {}, started: true };
   g.__jdWorker = state;
+  // Claiming a task is a query now, so fills can overlap: a task finishing and the poll both call
+  // fill(). One claimer per lane keeps two of them from each seeing a free slot and over-claiming.
+  const claiming = LANES.map(() => false);
 
-  const fill = () => {
-    LANES.forEach((lane, i) => {
+  const fillLane = async (i: number) => {
+    const lane = LANES[i]!;
+    if (claiming[i]) return; // the fill in progress will claim; the poll catches anything it misses
+    claiming[i] = true;
+    try {
       // Only claim what this process can run (a CLI without the mail handler leaves syncs queued).
       const kinds = lane.kinds.filter((k) => HANDLERS[k]);
       while (state.running[i]! < lane.slots) {
-        const t = claimTask(kinds);
+        const t = await claimTask(kinds);
         if (!t) break;
         state.running[i]!++;
         void runOne(t).finally(() => {
@@ -196,13 +202,21 @@ export function startWorker(opts: { pollMs?: number } = {}): void {
           fill();
         });
       }
-    });
+    } catch (err) {
+      console.warn(`[worker] couldn't claim a task: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      claiming[i] = false;
+    }
   };
+  const fill = () => LANES.forEach((_, i) => void fillLane(i));
   state.wake = fill;
   fill();
   // Picks up tasks enqueued by the web app and retries whose runAfter has passed.
   setInterval(() => {
-    if (hasRunnableTasks()) fill();
+    hasRunnableTasks().then(
+      (runnable) => runnable && fill(),
+      (err: unknown) => console.warn(`[worker] couldn't check the queue: ${err instanceof Error ? err.message : String(err)}`),
+    );
   }, opts.pollMs ?? 1000);
 }
 
@@ -218,13 +232,13 @@ export interface TaskStatus {
   error?: string | null;
 }
 
-export function taskStatus(kind: TaskKind, key: string): TaskStatus {
-  const row = getDb()
-    .select({ status: schema.task.status, error: schema.task.error })
-    .from(schema.task)
-    .where(and(eq(schema.task.kind, kind), eq(schema.task.key, key)))
-    .orderBy(schema.task.id)
-    .all()
-    .at(-1);
+export async function taskStatus(kind: TaskKind, key: string): Promise<TaskStatus> {
+  const row = (
+    await getDb()
+      .select({ status: schema.task.status, error: schema.task.error })
+      .from(schema.task)
+      .where(and(eq(schema.task.kind, kind), eq(schema.task.key, key)))
+      .orderBy(schema.task.id)
+  ).at(-1);
   return row ? { status: row.status, error: row.error } : { status: "idle" };
 }

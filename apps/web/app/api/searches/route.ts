@@ -13,13 +13,13 @@ const Body = z.object({
 
 /** Your dashboards, for the switcher. */
 export function GET(req: Request) {
-  return withUser(req, (user) => json(listDashboards(user.id)));
+  return withUser(req, async (user) => json(await listDashboards(user.id)));
 }
 
 export function POST(req: Request) {
   return withUser(req, async (user) => {
-    const row = createDashboard(user.id, Body.parse(await readJson(req)));
-    const crawl = ensureCrawl({ trigger: "search" });
+    const row = await createDashboard(user.id, Body.parse(await readJson(req)));
+    const crawl = await ensureCrawl({ trigger: "search" });
     return json({ id: row.id, crawlStarted: crawl.started });
   });
 }

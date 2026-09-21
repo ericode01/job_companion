@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "task_live_key_uq" ON "task" USING btree ("kind","key") WHERE "task"."status" in ('queued', 'running');

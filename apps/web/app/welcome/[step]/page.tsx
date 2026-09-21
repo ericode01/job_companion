@@ -18,7 +18,7 @@ export default async function WelcomeStep({ params }: { params: Promise<{ step: 
   // Finished onboarding already: the app is the place to change things now.
   if (!user.onboardingStep) redirect("/");
 
-  const dashboards = listDashboards(user.id);
+  const dashboards = await listDashboards(user.id);
   const first = dashboards[0] ?? null;
 
   switch (step as OnboardingStep) {
@@ -27,7 +27,7 @@ export default async function WelcomeStep({ params }: { params: Promise<{ step: 
         <SearchStep
           firstName={user.name.split(/\s+/)[0] ?? user.name}
           existing={first ? { id: first.id, name: first.name } : null}
-          defaultRemote={getUserSettings(user.id, "search").includeRemoteUS}
+          defaultRemote={(await getUserSettings(user.id, "search")).includeRemoteUS}
         />
       );
     case "resume":
@@ -37,15 +37,15 @@ export default async function WelcomeStep({ params }: { params: Promise<{ step: 
     case "answers":
       return <AnswersStep />;
     case "done": {
-      const profile = getProfile(user.id);
+      const profile = await getProfile(user.id);
       // Everyone starts with the two work-authorization answers; more means the step was used.
-      const answered = listAnswers(user.id).filter((a) => a.category !== "eeo").length;
+      const answered = (await listAnswers(user.id)).filter((a) => a.category !== "eeo").length;
       return (
         <DoneStep
           dashboardId={first?.id ?? null}
           checklist={[
             { label: first ? `Your first dashboard: ${first.name}` : "A job search", done: Boolean(first), href: "/searches/new" },
-            { label: "Resume", done: Boolean(currentMasterResume(user.id)), href: "/profile#resume" },
+            { label: "Resume", done: Boolean(await currentMasterResume(user.id)), href: "/profile#resume" },
             { label: "About you", done: Boolean(profile?.about || profile?.writingSample), href: "/profile#about" },
             { label: "Common application questions", done: answered > 2, href: "/answers" },
           ]}

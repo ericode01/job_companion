@@ -1,4 +1,4 @@
-import { getDb } from "@jd/core/db";
+import { initDb } from "@jd/core/db";
 
-getDb();
+await initDb();
 console.log("Database migrated.");

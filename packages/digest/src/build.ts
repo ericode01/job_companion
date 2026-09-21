@@ -1,5 +1,5 @@
 import { getUser, getUserSettings, type Comp } from "@jd/core";
-import { getDb, schema } from "@jd/core/db";
+import { getDb, one, schema } from "@jd/core/db";
 import { pendingInboxCount } from "@jd/apply";
 import { emailChangesSince, openActions, type ActionItem, type EmailChange } from "@jd/mail";
 import { currentMasterResume, getFit } from "@jd/research";
@@ -46,14 +46,15 @@ export interface Digest {
 
 const MAX_PER_SEARCH = 25;
 
-export function lastDigestAt(userId: number): Date | null {
-  const row = getDb()
-    .select()
-    .from(schema.digestRun)
-    .where(eq(schema.digestRun.userId, userId))
-    .orderBy(desc(schema.digestRun.id))
-    .limit(1)
-    .get();
+export async function lastDigestAt(userId: number): Promise<Date | null> {
+  const row = await one(
+    getDb()
+      .select()
+      .from(schema.digestRun)
+      .where(eq(schema.digestRun.userId, userId))
+      .orderBy(desc(schema.digestRun.id))
+      .limit(1),
+  );
   return row?.coveredUntil ?? null;
 }
 
@@ -62,23 +63,23 @@ export function lastDigestAt(userId: number): Date | null {
  * tab is on. "New" means first seen after the last digest, so nothing is reported twice, and a
  * job that matches two dashboards appears only in the first.
  */
-export function buildDigest(userId: number, now = new Date()): Digest {
-  const { minFitScore } = getUserSettings(userId, "digest");
+export async function buildDigest(userId: number, now = new Date()): Promise<Digest> {
+  const { minFitScore } = await getUserSettings(userId, "digest");
   // First run: look back a day rather than dumping the whole database.
-  const since = lastDigestAt(userId) ?? new Date(now.getTime() - 86_400_000);
-  const resume = currentMasterResume(userId);
+  const since = await lastDigestAt(userId) ?? new Date(now.getTime() - 86_400_000);
+  const resume = await currentMasterResume(userId);
   const resumeReady = resume?.parseStatus === "done";
 
   const sections: DigestSection[] = [];
   const seen = new Set<number>();
 
-  for (const search of followedSearches(userId)) {
+  for (const search of await followedSearches(userId)) {
     const threshold = search.digestMinFit ?? minFitScore;
-    const results = runSearch(null, search.filter, userId).filter((r) => r.firstSeenAt > since && !seen.has(r.jobId));
+    const results = (await runSearch(null, search.filter, userId)).filter((r) => r.firstSeenAt > since && !seen.has(r.jobId));
     const jobs: DigestJob[] = [];
     let belowThreshold = 0;
     for (const r of results) {
-      const fit = resumeReady ? getFit(r.jobId, resume!.sourceHash) : null;
+      const fit = resumeReady ? await getFit(r.jobId, resume!.sourceHash) : null;
       const fitScore = fit?.score ?? null;
       if (resumeReady && fitScore !== null && fitScore < threshold) {
         belowThreshold++;
@@ -109,13 +110,13 @@ export function buildDigest(userId: number, now = new Date()): Digest {
     }
   }
 
-  const pendingQuestions = pendingInboxCount(userId);
+  const pendingQuestions = await pendingInboxCount(userId);
   return {
     sections,
     total: sections.reduce((n, s) => n + s.jobs.length, 0),
-    actions: openActions(userId).slice(0, 15),
-    timeZone: getUser(userId)?.timezone ?? "UTC",
-    changes: emailChangesSince(userId, since),
+    actions: (await openActions(userId)).slice(0, 15),
+    timeZone: (await getUser(userId))?.timezone ?? "UTC",
+    changes: await emailChangesSince(userId, since),
     since,
     until: now,
     pendingQuestions,
@@ -125,9 +126,9 @@ export function buildDigest(userId: number, now = new Date()): Digest {
 }
 
 /** A person's dashboards whose Digest tab is on (all people's when userId is omitted). */
-export function followedSearches(userId?: number) {
+export async function followedSearches(userId?: number) {
   const { savedSearch } = schema;
-  return getDb()
+  return await getDb()
     .select()
     .from(savedSearch)
     .where(
@@ -137,6 +138,5 @@ export function followedSearches(userId?: number) {
         userId === undefined ? undefined : eq(savedSearch.userId, userId),
       ),
     )
-    .orderBy(savedSearch.id)
-    .all();
+    .orderBy(savedSearch.id);
 }

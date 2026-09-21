@@ -1,12 +1,8 @@
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
+import { useTestDb } from "@jd/core/testing";
 
-/** Points the app at a throwaway data dir. Call before anything opens the DB. */
-export function useTempDataDir(): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "jd-test-"));
-  process.env.DATA_DIR = dir;
-  return dir;
+/** Points the app at a throwaway data dir and an in-memory Postgres. Await before anything reads the DB. */
+export async function useTempDataDir(): Promise<string> {
+  return (await useTestDb("jd-test-")).dataDir;
 }
 
 /** Builds a minimal valid single-page PDF containing the given text lines. */

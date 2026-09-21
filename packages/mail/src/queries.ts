@@ -1,5 +1,5 @@
 import type { ApplicationStatus, EmailKind, InterviewRound } from "@jd/core";
-import { getDb, schema } from "@jd/core/db";
+import { getDb, one, schema } from "@jd/core/db";
 import { and, asc, count, desc, eq, gt, inArray, isNotNull, isNull, ne, notInArray, sql } from "drizzle-orm";
 
 const { emailMessage: em, application: app, job, company } = schema;
@@ -34,8 +34,8 @@ const OPEN_ACTION = and(
 );
 
 /** Emails asking you to do something, due soonest first. Yours, across every search. */
-export function openActions(userId: number): ActionItem[] {
-  const rows = getDb()
+export async function openActions(userId: number): Promise<ActionItem[]> {
+  const rows = await getDb()
     .select({
       emailId: em.id,
       applicationId: app.id,
@@ -56,8 +56,7 @@ export function openActions(userId: number): ActionItem[] {
     .innerJoin(app, eq(app.id, em.applicationId))
     .leftJoin(job, eq(job.id, app.jobId))
     .leftJoin(company, eq(company.id, job.companyId))
-    .where(and(eq(em.userId, userId), OPEN_ACTION))
-    .all();
+    .where(and(eq(em.userId, userId), OPEN_ACTION));
   return rows
     .map((r) => ({ ...r, actionText: r.actionText ?? "Reply to this email" }))
     .sort((a, b) => (a.actionDueAt?.getTime() ?? Infinity) - (b.actionDueAt?.getTime() ?? Infinity) || a.receivedAt.getTime() - b.receivedAt.getTime());
@@ -83,8 +82,8 @@ export interface ReviewItem {
 }
 
 /** Emails I wasn't sure about: they wait here instead of moving cards. */
-export function reviewQueue(userId: number): ReviewItem[] {
-  return getDb()
+export async function reviewQueue(userId: number): Promise<ReviewItem[]> {
+  return await getDb()
     .select({
       emailId: em.id,
       kind: em.kind,
@@ -106,21 +105,20 @@ export function reviewQueue(userId: number): ReviewItem[] {
     .from(em)
     .leftJoin(app, eq(app.id, em.applicationId))
     .where(and(eq(em.userId, userId), eq(em.reviewState, "needs_review")))
-    .orderBy(desc(em.receivedAt))
-    .all();
+    .orderBy(desc(em.receivedAt));
 }
 
 export type EmailView = Omit<typeof schema.emailMessage.$inferSelect, "providerId" | "connectionId" | "userId" | "createdAt">;
 
 /** Every job email on one application, oldest first. */
-export function timeline(userId: number, applicationId: number): EmailView[] {
-  return getDb()
-    .select()
-    .from(em)
-    .where(and(eq(em.userId, userId), eq(em.applicationId, applicationId), ne(em.reviewState, "dismissed")))
-    .orderBy(asc(em.receivedAt))
-    .all()
-    .map(({ providerId: _p, connectionId: _c, userId: _u, createdAt: _t, ...rest }) => rest);
+export async function timeline(userId: number, applicationId: number): Promise<EmailView[]> {
+  return (
+    await getDb()
+      .select()
+      .from(em)
+      .where(and(eq(em.userId, userId), eq(em.applicationId, applicationId), ne(em.reviewState, "dismissed")))
+      .orderBy(asc(em.receivedAt))
+  ).map(({ providerId: _p, connectionId: _c, userId: _u, createdAt: _t, ...rest }) => rest);
 }
 
 /* ---------- interview rounds ---------- */
@@ -174,10 +172,10 @@ export interface CardMail {
 }
 
 /** What the pipeline cards show about email, for many applications at once. */
-export function mailForCards(userId: number, applicationIds: number[]): Map<number, CardMail> {
+export async function mailForCards(userId: number, applicationIds: number[]): Promise<Map<number, CardMail>> {
   const out = new Map<number, CardMail>();
   if (!applicationIds.length) return out;
-  const rows = getDb()
+  const rows = await getDb()
     .select({
       id: em.id,
       applicationId: em.applicationId,
@@ -191,8 +189,7 @@ export function mailForCards(userId: number, applicationIds: number[]): Map<numb
       reviewState: em.reviewState,
     })
     .from(em)
-    .where(and(eq(em.userId, userId), inArray(em.applicationId, applicationIds), ne(em.reviewState, "dismissed")))
-    .all();
+    .where(and(eq(em.userId, userId), inArray(em.applicationId, applicationIds), ne(em.reviewState, "dismissed")));
   const byApp = new Map<number, typeof rows>();
   for (const r of rows) byApp.set(r.applicationId!, [...(byApp.get(r.applicationId!) ?? []), r]);
   for (const [id, list] of byApp) {
@@ -220,9 +217,9 @@ export interface EmailChange {
 }
 
 /** Pipeline moves made by email since a point in time (not undone). */
-export function emailChangesSince(userId: number, since: Date): EmailChange[] {
+export async function emailChangesSince(userId: number, since: Date): Promise<EmailChange[]> {
   const ev = schema.applicationEvent;
-  return getDb()
+  return await getDb()
     .select({
       eventId: ev.id,
       applicationId: app.id,
@@ -238,25 +235,26 @@ export function emailChangesSince(userId: number, since: Date): EmailChange[] {
     .leftJoin(job, eq(job.id, app.jobId))
     .leftJoin(company, eq(company.id, job.companyId))
     .where(and(eq(app.userId, userId), eq(ev.source, "email"), isNull(ev.revertedAt), gt(ev.createdAt, since)))
-    .orderBy(desc(ev.id))
-    .all();
+    .orderBy(desc(ev.id));
 }
 
 /** Counts by kind for the Mailbox page's summary. */
-export function connectionStats(userId: number, connectionId: number) {
+export async function connectionStats(userId: number, connectionId: number) {
   const db = getDb();
-  const byKind = db
+  const byKind = await db
     .select({ kind: em.kind, n: count() })
     .from(em)
     .where(and(eq(em.userId, userId), eq(em.connectionId, connectionId), ne(em.kind, "unrelated")))
-    .groupBy(em.kind)
-    .all();
+    .groupBy(em.kind);
   const created =
-    db
-      .select({ n: count() })
-      .from(app)
-      .where(and(eq(app.userId, userId), eq(app.source, "email")))
-      .get()?.n ?? 0;
+    (
+      await one(
+        db
+          .select({ n: count() })
+          .from(app)
+          .where(and(eq(app.userId, userId), eq(app.source, "email"))),
+      )
+    )?.n ?? 0;
   return { byKind: Object.fromEntries(byKind.map((r) => [r.kind, r.n])) as Partial<Record<EmailKind, number>>, createdApplications: created };
 }
 
@@ -276,21 +274,21 @@ export interface ClassifiedEmail {
  * subject and snippet only — fine for comparing two models against each other on equal footing,
  * not for judging either against the original decision.
  */
-export function recentlyClassified(userId: number, limit: number): ClassifiedEmail[] {
-  return getDb()
-    .select({
-      subject: em.subject,
-      fromName: em.fromName,
-      fromAddress: em.fromAddress,
-      receivedAt: em.receivedAt,
-      snippet: em.snippet,
-      kind: em.kind,
-      companyName: em.companyName,
-    })
-    .from(em)
-    .where(and(eq(em.userId, userId), eq(em.classifiedBy, "llm")))
-    .orderBy(desc(em.receivedAt))
-    .limit(limit)
-    .all()
-    .map((r) => ({ ...r, subject: r.subject ?? "", snippet: r.snippet ?? "" }));
+export async function recentlyClassified(userId: number, limit: number): Promise<ClassifiedEmail[]> {
+  return (
+    await getDb()
+      .select({
+        subject: em.subject,
+        fromName: em.fromName,
+        fromAddress: em.fromAddress,
+        receivedAt: em.receivedAt,
+        snippet: em.snippet,
+        kind: em.kind,
+        companyName: em.companyName,
+      })
+      .from(em)
+      .where(and(eq(em.userId, userId), eq(em.classifiedBy, "llm")))
+      .orderBy(desc(em.receivedAt))
+      .limit(limit)
+  ).map((r) => ({ ...r, subject: r.subject ?? "", snippet: r.snippet ?? "" }));
 }

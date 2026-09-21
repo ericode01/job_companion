@@ -1,1 +1,0 @@
-ALTER TABLE `application` ADD `cover_letter_warnings` text;

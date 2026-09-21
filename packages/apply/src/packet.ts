@@ -1,6 +1,5 @@
-import fs from "node:fs";
-import { getProfile } from "@jd/core";
-import { getDb, schema } from "@jd/core/db";
+import { fileStore, getProfile } from "@jd/core";
+import { getDb, one, schema } from "@jd/core/db";
 import { getResume } from "@jd/research";
 import { eq } from "drizzle-orm";
 import { PDFDocument, StandardFonts } from "pdf-lib";
@@ -55,17 +54,18 @@ function safeFileName(s: string): string {
 /** Everything the extension needs to fill one application. */
 export async function buildPacket(userId: number, applicationId: number): Promise<ApplyPacket | null> {
   const db = getDb();
-  const app = getApplication(userId, applicationId);
+  const app = await getApplication(userId, applicationId);
   if (!app || app.jobId === null) return null;
-  const row = db
-    .select({ job: schema.job, company: schema.company })
-    .from(schema.job)
-    .innerJoin(schema.company, eq(schema.company.id, schema.job.companyId))
-    .where(eq(schema.job.id, app.jobId))
-    .get();
+  const row = await one(
+    db
+      .select({ job: schema.job, company: schema.company })
+      .from(schema.job)
+      .innerJoin(schema.company, eq(schema.company.id, schema.job.companyId))
+      .where(eq(schema.job.id, app.jobId)),
+  );
   if (!row) return null;
-  const profile = getProfile(userId);
-  const resume = app.resumeId ? getResume(app.resumeId) : null;
+  const profile = await getProfile(userId);
+  const resume = app.resumeId ? await getResume(app.resumeId) : null;
   const src = resume?.source;
   const fullName = profile?.name ?? src?.contact.name ?? null;
   // "JANE Q PUBLIC" → "Jane Q Public"; forms rarely want all caps.
@@ -74,8 +74,9 @@ export async function buildPacket(userId: number, applicationId: number): Promis
   const current = src?.experience.find((e) => !e.end || /present|current|now/i.test(e.end)) ?? src?.experience[0];
 
   let resumeFile: ApplyPacket["resume"] = null;
-  if (resume && fs.existsSync(resume.filePath)) {
-    resumeFile = { fileName: safeFileName(`${pretty ?? "Resume"} Resume`) + ".pdf", mimeType: "application/pdf", base64: fs.readFileSync(resume.filePath).toString("base64") };
+  const pdf = resume ? await fileStore().get(resume.filePath) : null;
+  if (pdf) {
+    resumeFile = { fileName: safeFileName(`${pretty ?? "Resume"} Resume`) + ".pdf", mimeType: "application/pdf", base64: pdf.toString("base64") };
   }
   let coverLetter: ApplyPacket["coverLetter"] = null;
   if (app.coverLetterChoice === "yes" && app.coverLetter) {

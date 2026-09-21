@@ -14,16 +14,16 @@ export const dynamic = "force-dynamic";
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requirePageUser();
   // Applications from before dashboards (or from a job opened elsewhere) get a home pipeline.
-  assignOrphanApplications(user.id);
-  const dashboards = listDashboards(user.id).map(({ id, name, newCount }) => ({ id, name, newCount }));
-  const ext = getExtensionState(user.id);
+  await assignOrphanApplications(user.id);
+  const dashboards = (await listDashboards(user.id)).map(({ id, name, newCount }) => ({ id, name, newCount }));
+  const ext = await getExtensionState(user.id);
   const connected = Boolean(ext.lastSeenAt && Date.now() - ext.lastSeenAt.getTime() < 7 * 86_400_000);
-  const inbox = pendingInboxCount(user.id);
-  const actions = openActions(user.id).length;
-  const boxes = activeConnections(user.id);
+  const inbox = await pendingInboxCount(user.id);
+  const actions = (await openActions(user.id)).length;
+  const boxes = await activeConnections(user.id);
   const mailbox = {
     state: boxes.length === 0 ? ("none" as const) : boxes.some((b) => b.status === "needs_reauth" || b.status === "error") ? ("attention" as const) : ("ok" as const),
-    review: reviewQueue(user.id).length,
+    review: (await reviewQueue(user.id)).length,
   };
 
   return (

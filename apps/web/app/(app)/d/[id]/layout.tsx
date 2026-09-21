@@ -11,9 +11,9 @@ export const dynamic = "force-dynamic";
 
 export default async function DashboardLayout({ children, params }: { children: React.ReactNode; params: Promise<{ id: string }> }) {
   const user = await requirePageUser();
-  const d = getDashboard(user.id, Number((await params).id));
+  const d = await getDashboard(user.id, Number((await params).id));
   if (!d || d.archivedAt) notFound();
-  const steps = companionSteps(user, d, sinceLastVisit(user.id, d));
+  const steps = await companionSteps(user, d, await sinceLastVisit(user.id, d));
 
   return (
     <div className="space-y-5">

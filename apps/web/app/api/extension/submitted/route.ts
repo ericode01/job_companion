@@ -14,7 +14,7 @@ export function POST(req: Request) {
   return withExtension(req, async (userId) => {
     const parsed = Body.safeParse(await req.json().catch(() => null));
     if (!parsed.success) return extensionJson(req, { error: "Invalid request" }, { status: 400 });
-    const app = markSubmitted(userId, parsed.data.applicationId, parsed.data.answers);
+    const app = await markSubmitted(userId, parsed.data.applicationId, parsed.data.answers);
     if (!app) return extensionJson(req, { error: "Application not found" }, { status: 404 });
     return extensionJson(req, { ok: true, status: app.status });
   });

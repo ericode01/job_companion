@@ -9,6 +9,17 @@
       ],
       "port": 4317,
       "url": "http://127.0.0.1:4317"
+    },
+    {
+      "name": "web-only",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--filter",
+        "@jd/web",
+        "dev"
+      ],
+      "port": 4317,
+      "url": "http://127.0.0.1:4317"
     }
   ]
 }

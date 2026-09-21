@@ -15,11 +15,11 @@ const Body = z.object({
 export async function POST(req: Request) {
   const blocked = assertSameOrigin(req);
   if (blocked) return blocked;
-  if (userCount() > 0) return NextResponse.json({ error: "Setup is already done." }, { status: 409 });
+  if (await userCount() > 0) return NextResponse.json({ error: "Setup is already done." }, { status: 409 });
   try {
     const body = Body.parse(await readJson(req));
     const user = await createFirstAdmin(body);
-    const { token, expiresAt } = createSession(user.id);
+    const { token, expiresAt } = await createSession(user.id);
     await setSessionCookie(token, expiresAt);
     return NextResponse.json({ user: toPublicUser(user) });
   } catch (err) {

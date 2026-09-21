@@ -72,8 +72,8 @@ export function hasKeyFor(setting: string): boolean {
  * Merges the fields OpenRouter understands and the Anthropic SDK doesn't know about, so no call
  * site has to care which provider it is talking to. Exported for tests.
  */
-export function routingPrefs(body: Record<string, unknown>): Record<string, unknown> {
-  const { autoRouter } = getSettings("ai");
+export async function routingPrefs(body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const { autoRouter } = await getSettings("ai");
   const out = { ...body };
   const maxPrice = {
     ...(autoRouter.maxPromptUsd === null ? {} : { prompt: String(autoRouter.maxPromptUsd) }),
@@ -100,11 +100,15 @@ export function routingPrefs(body: Record<string, unknown>): Record<string, unkn
 
 const withRoutingPrefs: typeof fetch = async (input, init) => {
   if (typeof init?.body === "string") {
+    let body: Record<string, unknown> | null = null;
     try {
-      init = { ...init, body: JSON.stringify(routingPrefs(JSON.parse(init.body) as Record<string, unknown>)) };
+      body = JSON.parse(init.body) as Record<string, unknown>;
     } catch {
       // Not a JSON body we recognise; send it untouched.
     }
+    // Outside the try on purpose: reading the preferences is a database query now, and if it fails
+    // the request must fail too, not go out without data_collection: "deny".
+    if (body) init = { ...init, body: JSON.stringify(await routingPrefs(body)) };
   }
   return fetch(input, init);
 };
@@ -140,8 +144,8 @@ export function forModel(setting: string): { client: Anthropic; model: string; r
  * background work; the single-user app used to let clicks through. `opts` is kept so
  * callers can still say what kind of work it is.
  */
-export function assertBudget(_opts: { background: boolean }): void {
-  const s = getSpendStatus();
+export async function assertBudget(_opts: { background: boolean }): Promise<void> {
+  const s = await getSpendStatus();
   if (s.overCap) {
     throw new BudgetExceededError(`AI spending reached ${s.reason}. It resets tomorrow, or an admin can raise it.`);
   }
@@ -160,9 +164,9 @@ export interface UsageMessage {
  * Auto Router those differ, and the ledger is only useful if it names the real model. OpenRouter
  * reports an exact cost per request, so routed spend is measured rather than modelled.
  */
-export function recordMessageUsage(purpose: string, requested: string, message: UsageMessage): void {
+export async function recordMessageUsage(purpose: string, requested: string, message: UsageMessage): Promise<void> {
   const { usage } = message;
-  recordUsage({
+  await recordUsage({
     purpose,
     model: message.model || parseModel(requested).model,
     inputTokens: usage.input_tokens,

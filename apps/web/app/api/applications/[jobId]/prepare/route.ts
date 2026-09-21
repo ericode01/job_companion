@@ -12,18 +12,18 @@ type Ctx = { params: Promise<{ jobId: string }> };
 export function GET(req: Request, { params }: Ctx) {
   return withUser(req, async (user) => {
     const jobId = Number((await params).jobId);
-    const app = getApplicationByJob(user.id, jobId);
-    const resume = currentMasterResume(user.id);
-    const tailored = tailoredResumeFor(user.id, jobId);
+    const app = await getApplicationByJob(user.id, jobId);
+    const resume = await currentMasterResume(user.id);
+    const tailored = await tailoredResumeFor(user.id, jobId);
     return json({
       application: app,
-      coverLetterTask: app ? coverLetterStatus(app.id) : { status: "idle" },
+      coverLetterTask: app ? await coverLetterStatus(app.id) : { status: "idle" },
       formInfo: await fetchFormInfo(jobId),
       resume: resume ? { id: resume.id, fileName: resume.fileName, parseStatus: resume.parseStatus } : null,
       tailored: tailored
         ? { id: tailored.id, fileName: tailored.fileName, changeLog: tailored.changeLog ?? [], truthWarnings: tailored.truthWarnings ?? [], updatedAt: tailored.updatedAt }
         : null,
-      tailorTask: tailorStatus(user.id, jobId),
+      tailorTask: await tailorStatus(user.id, jobId),
       hasApiKey: hasApiKey(),
     });
   });
@@ -43,8 +43,8 @@ export function POST(req: Request, { params }: Ctx) {
     if (body.coverLetter === "yes" && !hasApiKey()) {
       return NextResponse.json({ error: "AI is turned off on this server, so cover letters can't be written." }, { status: 422 });
     }
-    const searchId = body.searchId && getDashboard(user.id, body.searchId) ? body.searchId : null;
-    const app = prepareApplication(user.id, jobId, { ...body, searchId });
-    return json({ application: app, coverLetterTask: coverLetterStatus(app.id) });
+    const searchId = body.searchId && await getDashboard(user.id, body.searchId) ? body.searchId : null;
+    const app = await prepareApplication(user.id, jobId, { ...body, searchId });
+    return json({ application: app, coverLetterTask: await coverLetterStatus(app.id) });
   });
 }

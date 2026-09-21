@@ -8,7 +8,7 @@ export const metadata: Metadata = { title: "New job search" };
 
 export default async function NewSearchPage() {
   const user = await requirePageUser();
-  const { jobs, companies } = countOpenJobs();
+  const { jobs, companies } = await countOpenJobs();
   return (
     <div className="mx-auto max-w-2xl space-y-6 pt-2 sm:pt-8">
       <div className="space-y-1">
@@ -19,7 +19,7 @@ export default async function NewSearchPage() {
           <span className="tabular-nums">{companies}</span> companies.
         </p>
       </div>
-      <NewSearch defaultRemote={getUserSettings(user.id, "search").includeRemoteUS} />
+      <NewSearch defaultRemote={(await getUserSettings(user.id, "search")).includeRemoteUS} />
     </div>
   );
 }

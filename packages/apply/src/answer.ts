@@ -1,6 +1,6 @@
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { getProfile, getSettings, type FormQuestion, type QuestionAnswer } from "@jd/core";
-import { getDb, schema } from "@jd/core/db";
+import { getDb, one, schema } from "@jd/core/db";
 import type { AnswerCategory } from "@jd/core/schema";
 import { assertBudget, forModel, hasApiKey, parseStructured, recordMessageUsage } from "@jd/llm";
 import { getResume, resumeForPrompt } from "@jd/research";
@@ -71,7 +71,7 @@ export interface ResolveResult {
  * Questions that need a recurring fact nobody has provided go to the Answers inbox.
  */
 export async function resolveQuestions(userId: number, applicationId: number, questions: FormQuestion[]): Promise<ResolveResult> {
-  const app = getApplication(userId, applicationId);
+  const app = await getApplication(userId, applicationId);
   if (!app) throw new Error("Application not found");
   // The extension only fills forms for jobs it knows; applications found in email have no form here.
   if (app.jobId === null) throw new Error("This application isn't linked to a job posting");
@@ -95,13 +95,13 @@ export async function resolveQuestions(userId: number, applicationId: number, qu
     }
     const standard = standardCategoryOf(q.label);
     const exact =
-      findExactAnswer(userId, q.label, jobId) ??
-      (isEeoQuestion(q.label) ? findExactAnswer(userId, eeoCategoryFor(q.label), jobId) : null) ??
-      (standard ? (answersForJob(userId, jobId).find((a) => a.category === standard && a.scope === "global") ?? null) : null);
+      await findExactAnswer(userId, q.label, jobId) ??
+      (isEeoQuestion(q.label) ? await findExactAnswer(userId, eeoCategoryFor(q.label), jobId) : null) ??
+      (standard ? ((await answersForJob(userId, jobId)).find((a) => a.category === standard && a.scope === "global") ?? null) : null);
     if (exact) {
       const value = applyAnswer(q, exact.answer);
       if (value !== null) {
-        recordAnswerUse(exact.id, q.label);
+        await recordAnswerUse(exact.id, q.label);
         out.set(q.index, { ...base(q), value, source: "bank", status: "filled", category: exact.category, bankId: exact.id });
         continue;
       }
@@ -116,12 +116,12 @@ export async function resolveQuestions(userId: number, applicationId: number, qu
   if (remaining.length > 0 && hasApiKey()) {
     try {
       const { items: resolutions, facts } = await askClaude(userId, app.resumeId, jobId, remaining);
-      const bank = new Map(answersForJob(userId, jobId).map((b) => [b.id, b]));
+      const bank = new Map((await answersForJob(userId, jobId)).map((b) => [b.id, b]));
       for (const q of remaining) {
         const r = resolutions.find((x) => x.index === q.index);
-        const answer = buildFromResolution(q, r, bank, facts);
+        const answer = await buildFromResolution(q, r, bank, facts);
         if (answer.status === "needs_user" && r && r.type === "recurring_fact") {
-          addToInbox(userId, { question: q.label, kind: q.kind, options: q.options, category: r.category as AnswerCategory, jobId });
+          await addToInbox(userId, { question: q.label, kind: q.kind, options: q.options, category: r.category as AnswerCategory, jobId });
           inboxAdded++;
         }
         out.set(q.index, answer);
@@ -149,12 +149,12 @@ export function isGrounded(answer: string, facts: string): boolean {
   return (answer.match(/\d[\d,.]*/g) ?? []).every((n) => haystack.includes(n.replace(/[,.]$/, "").replace(/,/g, "")));
 }
 
-function buildFromResolution(
+async function buildFromResolution(
   q: FormQuestion,
   r: z.infer<typeof LlmResolution>["items"][number] | undefined,
   bank: Map<number, BankAnswer>,
   facts: string,
-): QuestionAnswer {
+): Promise<QuestionAnswer> {
   const empty = (note: string | null, category: QuestionAnswer["category"] = "custom", saveable = true): QuestionAnswer => ({
     index: q.index,
     value: null,
@@ -173,7 +173,7 @@ function buildFromResolution(
   if (saved) {
     const value = applyAnswer(q, saved.answer);
     if (value !== null) {
-      recordAnswerUse(saved.id, q.label);
+      await recordAnswerUse(saved.id, q.label);
       return { index: q.index, value, source: "bank", status: "filled", category: saved.category, note: `Matched your saved answer to “${saved.question}”.`, bankId: saved.id, saveable: true };
     }
   }
@@ -205,20 +205,21 @@ function buildFromResolution(
 }
 
 async function askClaude(userId: number, resumeId: number | null, jobId: number, questions: FormQuestion[]) {
-  assertBudget({ background: false });
+  await assertBudget({ background: false });
   const db = getDb();
-  const resume = resumeId ? getResume(resumeId) : null;
-  const profile = getProfile(userId);
-  const job = db
-    .select({ title: schema.job.title, company: schema.company.name, description: schema.job.descriptionText })
-    .from(schema.job)
-    .innerJoin(schema.company, eq(schema.company.id, schema.job.companyId))
-    .where(eq(schema.job.id, jobId))
-    .get();
-  const bank = answersForJob(userId, jobId).map((b) => ({ id: b.id, question: b.question, answer: b.answer, category: b.category }));
+  const resume = resumeId ? await getResume(resumeId) : null;
+  const profile = await getProfile(userId);
+  const job = await one(
+    db
+      .select({ title: schema.job.title, company: schema.company.name, description: schema.job.descriptionText })
+      .from(schema.job)
+      .innerJoin(schema.company, eq(schema.company.id, schema.job.companyId))
+      .where(eq(schema.job.id, jobId)),
+  );
+  const bank = (await answersForJob(userId, jobId)).map((b) => ({ id: b.id, question: b.question, answer: b.answer, category: b.category }));
   const profileFacts = JSON.stringify({ name: profile?.name, location: profile?.location, links: profile?.links, about: profile?.about ?? undefined });
   const resumeText = resume ? resumeForPrompt(resume) : "none";
-  const setting = getSettings("ai").models.extraction;
+  const setting = (await getSettings("ai")).models.extraction;
   const { client, model } = forModel(setting);
   const response = await client.messages.create({
     model,
@@ -239,7 +240,7 @@ async function askClaude(userId: number, resumeId: number | null, jobId: number,
     ],
     output_config: { format: zodOutputFormat(LlmResolution) },
   });
-  recordMessageUsage("form_answers", setting, response);
+  await recordMessageUsage("form_answers", setting, response);
   if (response.stop_reason === "refusal") throw new Error("no suggestions returned");
   const suggested = parseStructured(response, LlmResolution, "answer suggestions");
   return { items: suggested.items, facts: `${profileFacts}\n${resumeText}\n${JSON.stringify(bank)}` };

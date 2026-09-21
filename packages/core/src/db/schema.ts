@@ -1,11 +1,12 @@
 import { sql } from "drizzle-orm";
-import { type AnySQLiteColumn, index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { type AnyPgColumn, boolean, doublePrecision, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import type { ActionType, ApplicationSource, EmailKind, InterviewRound, ReviewState, StatusEventSource } from "../mail-types";
 import type { ApplicationStatus, CompanyProfile, FitResult, JobAnalysis, ResumeChange, ResumeSource } from "../research-types";
 import type { AtsType, Comp, DiscoveryCandidate, LocationType, SearchFilter } from "../types";
 
-const now = sql`(unixepoch() * 1000)`;
-const createdAt = () => integer("created_at", { mode: "timestamp_ms" }).notNull().default(now);
+/** Every time is a timestamptz, read back as a Date. */
+const ts = (name: string) => timestamp(name, { withTimezone: true, mode: "date" });
+const createdAt = () => ts("created_at").notNull().defaultNow();
 
 /* ---------- Accounts ---------- */
 
@@ -13,24 +14,24 @@ export type UserRole = "admin" | "member";
 export const ONBOARDING_STEPS = ["search", "resume", "about", "answers", "done"] as const;
 export type OnboardingStep = (typeof ONBOARDING_STEPS)[number];
 
-export const user = sqliteTable("user", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const user = pgTable("user", {
+  id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
   /** Stored lowercased. */
   email: text("email").notNull().unique(),
   name: text("name").notNull(),
   passwordHash: text("password_hash").notNull(),
   role: text("role").$type<UserRole>().notNull().default("member"),
-  disabled: integer("disabled", { mode: "boolean" }).notNull().default(false),
+  disabled: boolean("disabled").notNull().default(false),
   /** IANA zone from the browser at sign-up; the digest send time is in this zone. */
   timezone: text("timezone").notNull().default("UTC"),
   /** The onboarding step to resume at; null once onboarding is finished. */
   onboardingStep: text("onboarding_step").$type<OnboardingStep>().default("search"),
   lastSearchId: integer("last_search_id"),
   createdAt: createdAt(),
-  lastSeenAt: integer("last_seen_at", { mode: "timestamp_ms" }),
+  lastSeenAt: ts("last_seen_at"),
 });
 
-export const session = sqliteTable(
+export const session = pgTable(
   "session",
   {
     /** SHA-256 of the cookie token; the token itself is never stored. */
@@ -39,83 +40,83 @@ export const session = sqliteTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     createdAt: createdAt(),
-    expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+    expiresAt: ts("expires_at").notNull(),
   },
   (t) => [index("session_user_idx").on(t.userId)],
 );
 
-export const invite = sqliteTable("invite", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const invite = pgTable("invite", {
+  id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
   tokenHash: text("token_hash").notNull().unique(),
   /** Optional: when set, only this address can accept it. */
   email: text("email"),
   role: text("role").$type<UserRole>().notNull().default("member"),
   createdBy: integer("created_by").references(() => user.id, { onDelete: "set null" }),
   createdAt: createdAt(),
-  expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
-  usedAt: integer("used_at", { mode: "timestamp_ms" }),
+  expiresAt: ts("expires_at").notNull(),
+  usedAt: ts("used_at"),
   usedBy: integer("used_by").references(() => user.id, { onDelete: "set null" }),
 });
 
 /** Per-person settings (search defaults, digest delivery). System settings stay in `settings`. */
-export const userSetting = sqliteTable(
+export const userSetting = pgTable(
   "user_setting",
   {
     userId: integer("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     key: text("key").notNull(),
-    value: text("value", { mode: "json" }).notNull(),
-    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().default(now),
+    value: jsonb("value").notNull(),
+    updatedAt: ts("updated_at").notNull().defaultNow(),
   },
   (t) => [uniqueIndex("user_setting_uq").on(t.userId, t.key)],
 );
 
-export const extensionPairing = sqliteTable("extension_pairing", {
+export const extensionPairing = pgTable("extension_pairing", {
   userId: integer("user_id")
     .primaryKey()
     .references(() => user.id, { onDelete: "cascade" }),
   token: text("token").notNull().unique(),
-  lastSeenAt: integer("last_seen_at", { mode: "timestamp_ms" }),
+  lastSeenAt: ts("last_seen_at"),
   version: text("version"),
 });
 
 /** Per-person rows start nullable so pre-accounts data can be claimed by the first account. */
 const ownerId = () => integer("user_id").references(() => user.id, { onDelete: "cascade" });
 
-export const profile = sqliteTable("profile", {
-  id: integer("id").primaryKey(),
+export const profile = pgTable("profile", {
+  id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
   userId: ownerId().unique(),
   name: text("name"),
   email: text("email"),
   phone: text("phone"),
   location: text("location"),
-  links: text("links", { mode: "json" }).$type<{ linkedin?: string; github?: string; site?: string }>(),
+  links: jsonb("links").$type<{ linkedin?: string; github?: string; site?: string }>(),
   /** Onboarding "about you": goals, what you want next, anything the resume doesn't say. */
   about: text("about"),
   /** A cover letter or other writing of yours, used as a voice reference. */
   writingSample: text("writing_sample"),
-  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().default(now),
+  updatedAt: ts("updated_at").notNull().defaultNow(),
 });
 
-export const settings = sqliteTable("settings", {
+export const settings = pgTable("settings", {
   key: text("key").primaryKey(),
-  value: text("value", { mode: "json" }).notNull(),
-  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().default(now),
+  value: jsonb("value").notNull(),
+  updatedAt: ts("updated_at").notNull().defaultNow(),
 });
 
-export const company = sqliteTable(
+export const company = pgTable(
   "company",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
+    id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
     name: text("name").notNull(),
     domain: text("domain"),
     atsType: text("ats_type").$type<AtsType>().notNull(),
     atsSlug: text("ats_slug").notNull(),
     source: text("source").$type<"seed" | "discovered" | "manual">().notNull(),
-    watch: integer("watch", { mode: "boolean" }).notNull().default(false),
-    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
-    lastCrawledAt: integer("last_crawled_at", { mode: "timestamp_ms" }),
+    watch: boolean("watch").notNull().default(false),
+    enabled: boolean("enabled").notNull().default(true),
+    lastCrawledAt: ts("last_crawled_at"),
     crawlStatus: text("crawl_status").$type<"ok" | "not_found" | "error">(),
     crawlError: text("crawl_error"),
     openJobCount: integer("open_job_count").notNull().default(0),
@@ -124,10 +125,10 @@ export const company = sqliteTable(
   (t) => [uniqueIndex("company_ats_uq").on(t.atsType, t.atsSlug)],
 );
 
-export const job = sqliteTable(
+export const job = pgTable(
   "job",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
+    id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
     companyId: integer("company_id")
       .notNull()
       .references(() => company.id, { onDelete: "cascade" }),
@@ -138,18 +139,18 @@ export const job = sqliteTable(
     title: text("title").notNull(),
     titleNormalized: text("title_normalized").notNull(),
     department: text("department"),
-    locations: text("locations", { mode: "json" }).$type<string[]>().notNull(),
+    locations: jsonb("locations").$type<string[]>().notNull(),
     locationType: text("location_type").$type<LocationType>().notNull(),
-    remoteCountries: text("remote_countries", { mode: "json" }).$type<string[]>().notNull(),
-    comp: text("comp", { mode: "json" }).$type<Comp>(),
+    remoteCountries: jsonb("remote_countries").$type<string[]>().notNull(),
+    comp: jsonb("comp").$type<Comp>(),
     descriptionHtml: text("description_html").notNull(),
     descriptionText: text("description_text").notNull(),
-    postedAt: integer("posted_at", { mode: "timestamp_ms" }),
+    postedAt: ts("posted_at"),
     /** Set by boards whose list endpoint omits the description; cleared once hydrated. */
-    needsDetail: integer("needs_detail", { mode: "boolean" }).notNull().default(false),
-    firstSeenAt: integer("first_seen_at", { mode: "timestamp_ms" }).notNull().default(now),
-    lastSeenAt: integer("last_seen_at", { mode: "timestamp_ms" }).notNull().default(now),
-    closedAt: integer("closed_at", { mode: "timestamp_ms" }),
+    needsDetail: boolean("needs_detail").notNull().default(false),
+    firstSeenAt: ts("first_seen_at").notNull().defaultNow(),
+    lastSeenAt: ts("last_seen_at").notNull().defaultNow(),
+    closedAt: ts("closed_at"),
     contentHash: text("content_hash").notNull(),
   },
   (t) => [
@@ -158,26 +159,26 @@ export const job = sqliteTable(
   ],
 );
 
-export const savedSearch = sqliteTable("saved_search", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const savedSearch = pgTable("saved_search", {
+  id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
   userId: ownerId(),
   /** Dashboard title; falls back to rawQuery. */
   name: text("name"),
   rawQuery: text("raw_query").notNull(),
-  filter: text("filter", { mode: "json" }).$type<SearchFilter>().notNull(),
+  filter: jsonb("filter").$type<SearchFilter>().notNull(),
   parsedBy: text("parsed_by").$type<"llm" | "rules">().notNull(),
   /** Include this dashboard's section in the daily email. */
-  notify: integer("notify", { mode: "boolean" }).notNull().default(false),
+  notify: boolean("notify").notNull().default(false),
   /** Per-dashboard fit threshold for the email; null uses the person's default. */
   digestMinFit: integer("digest_min_fit"),
-  lastRunAt: integer("last_run_at", { mode: "timestamp_ms" }),
+  lastRunAt: ts("last_run_at"),
   /** New-match counts in the switcher are "first seen since you last opened it". */
-  lastViewedAt: integer("last_viewed_at", { mode: "timestamp_ms" }),
-  archivedAt: integer("archived_at", { mode: "timestamp_ms" }),
+  lastViewedAt: ts("last_viewed_at"),
+  archivedAt: ts("archived_at"),
   createdAt: createdAt(),
 });
 
-export const jobMatch = sqliteTable(
+export const jobMatch = pgTable(
   "job_match",
   {
     jobId: integer("job_id")
@@ -186,14 +187,14 @@ export const jobMatch = sqliteTable(
     searchId: integer("search_id")
       .notNull()
       .references(() => savedSearch.id, { onDelete: "cascade" }),
-    rulePass: integer("rule_pass", { mode: "boolean" }).notNull(),
-    matchedAt: integer("matched_at", { mode: "timestamp_ms" }).notNull().default(now),
+    rulePass: boolean("rule_pass").notNull(),
+    matchedAt: ts("matched_at").notNull().defaultNow(),
   },
   (t) => [uniqueIndex("job_match_uq").on(t.jobId, t.searchId)],
 );
 
-export const crawlRun = sqliteTable("crawl_run", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const crawlRun = pgTable("crawl_run", {
+  id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
   trigger: text("trigger").$type<"search" | "manual" | "schedule">().notNull(),
   status: text("status").$type<"running" | "done" | "failed">().notNull(),
   total: integer("total").notNull().default(0),
@@ -201,90 +202,91 @@ export const crawlRun = sqliteTable("crawl_run", {
   failed: integer("failed").notNull().default(0),
   jobsUpserted: integer("jobs_upserted").notNull().default(0),
   jobsClosed: integer("jobs_closed").notNull().default(0),
-  startedAt: integer("started_at", { mode: "timestamp_ms" }).notNull().default(now),
-  finishedAt: integer("finished_at", { mode: "timestamp_ms" }),
+  startedAt: ts("started_at").notNull().defaultNow(),
+  finishedAt: ts("finished_at"),
   error: text("error"),
 });
 
-export const llmUsage = sqliteTable("llm_usage", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const llmUsage = pgTable("llm_usage", {
+  id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
   /** Who the call was for; null for shared work such as company research started by the system. */
   userId: integer("user_id").references(() => user.id, { onDelete: "set null" }),
-  ts: integer("ts", { mode: "timestamp_ms" }).notNull().default(now),
+  ts: ts("ts").notNull().defaultNow(),
   purpose: text("purpose").notNull(),
   model: text("model").notNull(),
   inputTokens: integer("input_tokens").notNull(),
   outputTokens: integer("output_tokens").notNull(),
   cacheReadTokens: integer("cache_read_tokens").notNull().default(0),
   cacheWriteTokens: integer("cache_write_tokens").notNull().default(0),
-  costUsd: real("cost_usd").notNull(),
+  costUsd: doublePrecision("cost_usd").notNull(),
 });
 
 /* ---------- M2 ---------- */
 
-export const resume = sqliteTable("resume", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const resume = pgTable("resume", {
+  id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
   userId: ownerId(),
   kind: text("kind").$type<"master" | "tailored">().notNull(),
   baseResumeId: integer("base_resume_id"),
   jobId: integer("job_id").references(() => job.id, { onDelete: "set null" }),
   fileName: text("file_name").notNull(),
+  /** A key in the file store (storage.ts), e.g. "resumes/3/<uuid>.pdf". */
   filePath: text("file_path").notNull(),
   parsedText: text("parsed_text").notNull(),
-  source: text("source", { mode: "json" }).$type<ResumeSource>(),
+  source: jsonb("source").$type<ResumeSource>(),
   /** Hash of `source` (or parsedText when unparsed); fit scores are keyed by it. */
   sourceHash: text("source_hash").notNull(),
   parseStatus: text("parse_status").$type<"pending" | "done" | "failed" | "skipped">().notNull(),
   parseError: text("parse_error"),
   /** Tailored resumes only: what changed vs. the master, and anything the truthfulness check flagged. */
-  changeLog: text("change_log", { mode: "json" }).$type<ResumeChange[]>(),
-  truthWarnings: text("truth_warnings", { mode: "json" }).$type<string[]>(),
+  changeLog: jsonb("change_log").$type<ResumeChange[]>(),
+  truthWarnings: jsonb("truth_warnings").$type<string[]>(),
   status: text("status").$type<"draft" | "approved">().notNull().default("approved"),
   createdAt: createdAt(),
-  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().default(now),
+  updatedAt: ts("updated_at").notNull().defaultNow(),
 });
 
-export const companyProfile = sqliteTable("company_profile", {
+export const companyProfile = pgTable("company_profile", {
   companyId: integer("company_id")
     .primaryKey()
     .references(() => company.id, { onDelete: "cascade" }),
-  data: text("data", { mode: "json" }).$type<CompanyProfile>().notNull(),
+  data: jsonb("data").$type<CompanyProfile>().notNull(),
   /** URLs Claude actually searched/fetched during research. */
-  consultedUrls: text("consulted_urls", { mode: "json" }).$type<string[]>().notNull(),
+  consultedUrls: jsonb("consulted_urls").$type<string[]>().notNull(),
   model: text("model").notNull(),
-  enrichedAt: integer("enriched_at", { mode: "timestamp_ms" }).notNull().default(now),
+  enrichedAt: ts("enriched_at").notNull().defaultNow(),
 });
 
-export const jobAnalysis = sqliteTable("job_analysis", {
+export const jobAnalysis = pgTable("job_analysis", {
   jobId: integer("job_id")
     .primaryKey()
     .references(() => job.id, { onDelete: "cascade" }),
-  data: text("data", { mode: "json" }).$type<JobAnalysis>().notNull(),
+  data: jsonb("data").$type<JobAnalysis>().notNull(),
   contentHash: text("content_hash").notNull(),
   model: text("model").notNull(),
-  analyzedAt: integer("analyzed_at", { mode: "timestamp_ms" }).notNull().default(now),
+  analyzedAt: ts("analyzed_at").notNull().defaultNow(),
 });
 
-export const jobFit = sqliteTable(
+export const jobFit = pgTable(
   "job_fit",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
+    id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
     jobId: integer("job_id")
       .notNull()
       .references(() => job.id, { onDelete: "cascade" }),
     resumeHash: text("resume_hash").notNull(),
     score: integer("score").notNull(),
-    data: text("data", { mode: "json" }).$type<FitResult>().notNull(),
+    data: jsonb("data").$type<FitResult>().notNull(),
     model: text("model").notNull(),
-    scoredAt: integer("scored_at", { mode: "timestamp_ms" }).notNull().default(now),
+    scoredAt: ts("scored_at").notNull().defaultNow(),
   },
   (t) => [uniqueIndex("job_fit_uq").on(t.jobId, t.resumeHash)],
 );
 
-export const application = sqliteTable(
+export const application = pgTable(
   "application",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
+    id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
     userId: ownerId(),
     /** The dashboard this application is tracked in. */
     searchId: integer("search_id").references(() => savedSearch.id, { onDelete: "set null" }),
@@ -296,35 +298,35 @@ export const application = sqliteTable(
     jobUrl: text("job_url"),
     source: text("source").$type<ApplicationSource>().notNull().default("app"),
     /** When an application-received email arrived. */
-    confirmedAt: integer("confirmed_at", { mode: "timestamp_ms" }),
+    confirmedAt: ts("confirmed_at"),
     status: text("status").$type<ApplicationStatus>().notNull(),
     notes: text("notes"),
     resumeId: integer("resume_id").references(() => resume.id, { onDelete: "set null" }),
     coverLetterChoice: text("cover_letter_choice").$type<"yes" | "no">(),
     coverLetter: text("cover_letter"),
     /** Numbers or claims in the generated letter that couldn't be matched to the resume or posting. */
-    coverLetterWarnings: text("cover_letter_warnings", { mode: "json" }).$type<string[]>(),
-    answers: text("answers", { mode: "json" }),
-    appliedAt: integer("applied_at", { mode: "timestamp_ms" }),
+    coverLetterWarnings: jsonb("cover_letter_warnings").$type<string[]>(),
+    answers: jsonb("answers"),
+    appliedAt: ts("applied_at"),
     createdAt: createdAt(),
-    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().default(now),
+    updatedAt: ts("updated_at").notNull().defaultNow(),
   },
   (t) => [uniqueIndex("application_user_job_uq").on(t.userId, t.jobId)],
 );
 
 /** Status history: undo, "moved by an email from …", and the rule that a manual move wins. */
-export const applicationEvent = sqliteTable(
+export const applicationEvent = pgTable(
   "application_event",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
+    id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
     applicationId: integer("application_id")
       .notNull()
       .references(() => application.id, { onDelete: "cascade" }),
     fromStatus: text("from_status").$type<ApplicationStatus>(),
     toStatus: text("to_status").$type<ApplicationStatus>().notNull(),
     source: text("source").$type<StatusEventSource>().notNull(),
-    emailId: integer("email_id").references((): AnySQLiteColumn => emailMessage.id, { onDelete: "set null" }),
-    revertedAt: integer("reverted_at", { mode: "timestamp_ms" }),
+    emailId: integer("email_id").references((): AnyPgColumn => emailMessage.id, { onDelete: "set null" }),
+    revertedAt: ts("reverted_at"),
     createdAt: createdAt(),
   },
   (t) => [index("application_event_app_idx").on(t.applicationId)],
@@ -342,10 +344,10 @@ export interface MailCursor {
 }
 
 /** A person's mailbox, connected read-only. The secret is encrypted with SECRET_KEY. */
-export const mailboxConnection = sqliteTable(
+export const mailboxConnection = pgTable(
   "mailbox_connection",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
+    id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
     userId: integer("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
@@ -356,12 +358,12 @@ export const mailboxConnection = sqliteTable(
     secret: text("secret").notNull(),
     imapHost: text("imap_host"),
     imapPort: integer("imap_port"),
-    cursor: text("cursor", { mode: "json" }).$type<MailCursor>().notNull().default({}),
+    cursor: jsonb("cursor").$type<MailCursor>().notNull().default({}),
     backfillDays: integer("backfill_days").notNull().default(90),
-    backfillDone: integer("backfill_done", { mode: "boolean" }).notNull().default(false),
+    backfillDone: boolean("backfill_done").notNull().default(false),
     /** Progress of the current run, for the Mailbox page. */
-    progress: text("progress", { mode: "json" }).$type<{ done: number; total: number } | null>(),
-    lastSyncAt: integer("last_sync_at", { mode: "timestamp_ms" }),
+    progress: jsonb("progress").$type<{ done: number; total: number } | null>(),
+    lastSyncAt: ts("last_sync_at"),
     lastError: text("last_error"),
     createdAt: createdAt(),
   },
@@ -372,10 +374,10 @@ export const mailboxConnection = sqliteTable(
  * Job-related emails only: headers, a short snippet and what they mean. Bodies are never
  * stored. Unrelated emails keep only their ids (kind 'unrelated') so they aren't read twice.
  */
-export const emailMessage = sqliteTable(
+export const emailMessage = pgTable(
   "email_message",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
+    id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
     userId: integer("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
@@ -390,23 +392,23 @@ export const emailMessage = sqliteTable(
     fromName: text("from_name"),
     fromAddress: text("from_address"),
     subject: text("subject"),
-    receivedAt: integer("received_at", { mode: "timestamp_ms" }).notNull(),
+    receivedAt: ts("received_at").notNull(),
     snippet: text("snippet"),
     kind: text("kind").$type<EmailKind>().notNull(),
     round: text("round").$type<InterviewRound>(),
     roundLabel: text("round_label"),
-    eventAt: integer("event_at", { mode: "timestamp_ms" }),
+    eventAt: ts("event_at"),
     companyName: text("company_name"),
     jobTitle: text("job_title"),
     summary: text("summary"),
-    confidence: real("confidence"),
+    confidence: doublePrecision("confidence"),
     classifiedBy: text("classified_by").$type<"llm" | "rules">(),
     applicationId: integer("application_id").references(() => application.id, { onDelete: "set null" }),
-    actionNeeded: integer("action_needed", { mode: "boolean" }).notNull().default(false),
+    actionNeeded: boolean("action_needed").notNull().default(false),
     actionType: text("action_type").$type<ActionType>(),
     actionText: text("action_text"),
-    actionDueAt: integer("action_due_at", { mode: "timestamp_ms" }),
-    actionDoneAt: integer("action_done_at", { mode: "timestamp_ms" }),
+    actionDueAt: ts("action_due_at"),
+    actionDoneAt: ts("action_done_at"),
     reviewState: text("review_state").$type<ReviewState>().notNull().default("auto"),
     createdAt: createdAt(),
   },
@@ -427,58 +429,64 @@ export type TaskKind =
   | "discover_companies"
   | "sync_mailbox";
 
-export const task = sqliteTable(
+export const task = pgTable(
   "task",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
+    id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
     kind: text("kind").$type<TaskKind>().notNull(),
     /** Dedupe key, e.g. "company:12". Only one queued/running task per (kind, key). */
     key: text("key").notNull(),
-    payload: text("payload", { mode: "json" }).$type<Record<string, unknown>>().notNull(),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
     status: text("status").$type<"queued" | "running" | "done" | "failed">().notNull(),
     priority: integer("priority").notNull().default(0),
-    background: integer("background", { mode: "boolean" }).notNull(),
+    background: boolean("background").notNull(),
     attempts: integer("attempts").notNull().default(0),
-    runAfter: integer("run_after", { mode: "timestamp_ms" }).notNull().default(now),
+    runAfter: ts("run_after").notNull().defaultNow(),
     error: text("error"),
     createdAt: createdAt(),
-    startedAt: integer("started_at", { mode: "timestamp_ms" }),
-    finishedAt: integer("finished_at", { mode: "timestamp_ms" }),
+    startedAt: ts("started_at"),
+    finishedAt: ts("finished_at"),
   },
-  (t) => [index("task_claim_idx").on(t.status, t.kind, t.priority), index("task_key_idx").on(t.kind, t.key)],
+  (t) => [
+    index("task_claim_idx").on(t.status, t.kind, t.priority),
+    index("task_key_idx").on(t.kind, t.key),
+    // One live task per (kind, key). Finished tasks keep their keys, so it covers only queued and
+    // running ones; enqueueTask relies on it when two callers race to add the same work.
+    uniqueIndex("task_live_key_uq").on(t.kind, t.key).where(sql`${t.status} in ('queued', 'running')`),
+  ],
 );
 
 /* ---------- M3 ---------- */
 
 export type AnswerCategory = "work_auth" | "sponsorship" | "relocation" | "salary" | "eeo" | "logistics" | "custom";
 
-export const answerBank = sqliteTable("answer_bank", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const answerBank = pgTable("answer_bank", {
+  id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
   userId: ownerId(),
   category: text("category").$type<AnswerCategory>().notNull(),
   /** Canonical wording shown in the Answers page. */
   question: text("question").notNull(),
   /** Normalized wordings this answer has matched on real forms. */
-  variants: text("variants", { mode: "json" }).$type<string[]>().notNull(),
+  variants: jsonb("variants").$type<string[]>().notNull(),
   answer: text("answer").notNull(),
   /** job: answer applies only to jobId (e.g. salary for one role). */
   scope: text("scope").$type<"global" | "job">().notNull().default("global"),
   jobId: integer("job_id").references(() => job.id, { onDelete: "cascade" }),
   useCount: integer("use_count").notNull().default(0),
-  lastUsedAt: integer("last_used_at", { mode: "timestamp_ms" }),
+  lastUsedAt: ts("last_used_at"),
   createdAt: createdAt(),
-  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().default(now),
+  updatedAt: ts("updated_at").notNull().defaultNow(),
 });
 
-export const questionInbox = sqliteTable(
+export const questionInbox = pgTable(
   "question_inbox",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
+    id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
     userId: ownerId(),
     normalized: text("normalized").notNull(),
     question: text("question").notNull(),
     kind: text("kind").notNull(),
-    options: text("options", { mode: "json" }).$type<string[]>().notNull(),
+    options: jsonb("options").$type<string[]>().notNull(),
     category: text("category").$type<AnswerCategory>().notNull(),
     seenCount: integer("seen_count").notNull().default(1),
     firstJobId: integer("first_job_id").references(() => job.id, { onDelete: "set null" }),
@@ -486,35 +494,35 @@ export const questionInbox = sqliteTable(
     suggestedAnswer: text("suggested_answer"),
     status: text("status").$type<"pending" | "answered" | "ignored">().notNull().default("pending"),
     createdAt: createdAt(),
-    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().default(now),
+    updatedAt: ts("updated_at").notNull().defaultNow(),
   },
   (t) => [uniqueIndex("question_inbox_user_norm_uq").on(t.userId, t.normalized)],
 );
 
-export const digestRun = sqliteTable("digest_run", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const digestRun = pgTable("digest_run", {
+  id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
   userId: ownerId(),
   status: text("status").$type<"sent" | "skipped" | "failed">().notNull(),
-  jobIds: text("job_ids", { mode: "json" }).$type<number[]>().notNull(),
+  jobIds: jsonb("job_ids").$type<number[]>().notNull(),
   to: text("to"),
   method: text("method"),
   error: text("error"),
   /** Jobs first seen after this point go in the next digest. */
-  coveredUntil: integer("covered_until", { mode: "timestamp_ms" }).notNull(),
-  sentAt: integer("sent_at", { mode: "timestamp_ms" }).notNull().default(now),
+  coveredUntil: ts("covered_until").notNull(),
+  sentAt: ts("sent_at").notNull().defaultNow(),
 });
 
 /** One run of "find me more companies": the prompt, the candidates, and what happened to each. */
-export const discoveryRun = sqliteTable("discovery_run", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const discoveryRun = pgTable("discovery_run", {
+  id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
   prompt: text("prompt").notNull(),
   searchId: integer("search_id").references(() => savedSearch.id, { onDelete: "set null" }),
   trigger: text("trigger").$type<"manual" | "schedule">().notNull(),
   startedBy: integer("started_by").references(() => user.id, { onDelete: "set null" }),
   status: text("status").$type<"running" | "done" | "failed">().notNull(),
-  candidates: text("candidates", { mode: "json" }).$type<DiscoveryCandidate[]>().notNull(),
+  candidates: jsonb("candidates").$type<DiscoveryCandidate[]>().notNull(),
   added: integer("added").notNull().default(0),
   error: text("error"),
   createdAt: createdAt(),
-  finishedAt: integer("finished_at", { mode: "timestamp_ms" }),
+  finishedAt: ts("finished_at"),
 });

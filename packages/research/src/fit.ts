@@ -1,6 +1,6 @@
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { FitResultSchema, getSettings } from "@jd/core";
-import { getDb, schema } from "@jd/core/db";
+import { getDb, one, returned, schema } from "@jd/core/db";
 import { assertBudget, forModel, parseStructured, recordMessageUsage } from "@jd/llm";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { getResume, resumeForPrompt } from "./resume";
@@ -37,18 +37,19 @@ export async function scoreFit(
   opts: { background: boolean; model?: string; persist?: boolean },
 ): Promise<JobFitRow> {
   const db = getDb();
-  const resume = getResume(resumeId);
+  const resume = await getResume(resumeId);
   if (!resume) throw new NonRetryableError(`Resume ${resumeId} not found`);
-  const row = db
-    .select({ job, companyName: company.name })
-    .from(job)
-    .innerJoin(company, eq(company.id, job.companyId))
-    .where(eq(job.id, jobId))
-    .get();
+  const row = await one(
+    db
+      .select({ job, companyName: company.name })
+      .from(job)
+      .innerJoin(company, eq(company.id, job.companyId))
+      .where(eq(job.id, jobId)),
+  );
   if (!row) throw new NonRetryableError(`Job ${jobId} not found`);
-  assertBudget(opts);
+  await assertBudget(opts);
 
-  const setting = opts.model ?? getSettings("ai").models.fitScore;
+  const setting = opts.model ?? (await getSettings("ai")).models.fitScore;
   const { client, model } = forModel(setting);
   const j = row.job;
   const response = await client.messages.create({
@@ -64,26 +65,28 @@ export async function scoreFit(
     ],
     output_config: { format: zodOutputFormat(FitResultSchema) },
   });
-  recordMessageUsage("fit_score", setting, response);
+  await recordMessageUsage("fit_score", setting, response);
   assertUsableStop(response, "score this job");
   const out = parseStructured(response, FitResultSchema, "fit assessment");
   const score = Math.max(0, Math.min(100, Math.round(out.score)));
   const values = { jobId, resumeHash: resume.sourceHash, score, data: { ...out, score }, model, scoredAt: new Date() };
   if (opts.persist === false) return { id: 0, ...values } as JobFitRow;
-  return db
-    .insert(jobFit)
-    .values(values)
-    .onConflictDoUpdate({ target: [jobFit.jobId, jobFit.resumeHash], set: values })
-    .returning()
-    .get();
+  return await returned(
+    db
+      .insert(jobFit)
+      .values(values)
+      .onConflictDoUpdate({ target: [jobFit.jobId, jobFit.resumeHash], set: values })
+      .returning(),
+  );
 }
 
-export function getFit(jobId: number, resumeHash: string): JobFitRow | null {
-  return getDb()
-    .select()
-    .from(jobFit)
-    .where(and(eq(jobFit.jobId, jobId), eq(jobFit.resumeHash, resumeHash)))
-    .get() ?? null;
+export async function getFit(jobId: number, resumeHash: string): Promise<JobFitRow | null> {
+  return await one(
+    getDb()
+      .select()
+      .from(jobFit)
+      .where(and(eq(jobFit.jobId, jobId), eq(jobFit.resumeHash, resumeHash))),
+  ) ?? null;
 }
 
 export interface ScoredSample {
@@ -96,25 +99,23 @@ export interface ScoredSample {
 }
 
 /** The most recently scored jobs, with the resume they were scored against. For comparing models. */
-export function recentlyScored(limit: number): ScoredSample[] {
+export async function recentlyScored(limit: number): Promise<ScoredSample[]> {
   const { resume } = schema;
-  return getDb()
+  return await getDb()
     .select({ jobId: jobFit.jobId, title: job.title, score: jobFit.score, model: jobFit.model, resumeId: resume.id, userId: resume.userId })
     .from(jobFit)
     .innerJoin(job, eq(job.id, jobFit.jobId))
     .innerJoin(resume, eq(resume.sourceHash, jobFit.resumeHash))
     .orderBy(desc(jobFit.scoredAt))
-    .limit(limit)
-    .all();
+    .limit(limit);
 }
 
-export function getFitScores(jobIds: number[], resumeHash: string): Map<number, number> {
+export async function getFitScores(jobIds: number[], resumeHash: string): Promise<Map<number, number>> {
   if (!jobIds.length) return new Map();
-  const rows = getDb()
+  const rows = await getDb()
     .select({ jobId: jobFit.jobId, score: jobFit.score })
     .from(jobFit)
-    .where(and(eq(jobFit.resumeHash, resumeHash), inArray(jobFit.jobId, jobIds)))
-    .all();
+    .where(and(eq(jobFit.resumeHash, resumeHash), inArray(jobFit.jobId, jobIds)));
   return new Map(rows.map((r) => [r.jobId, r.score]));
 }
 

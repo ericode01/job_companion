@@ -7,7 +7,7 @@ import { json, readJson, withAdmin } from "@/lib/api";
 
 /** The shared company list is managed in the admin portal. */
 export function GET(req: Request) {
-  return withAdmin(req, () => json(getDb().select().from(schema.company).orderBy(asc(schema.company.name)).all()));
+  return withAdmin(req, async () => json(await getDb().select().from(schema.company).orderBy(asc(schema.company.name))));
 }
 
 const Body = z.object({ url: z.string().trim().min(3).max(500), name: z.string().trim().max(120).optional() });

@@ -1,10 +1,8 @@
-import fs from "node:fs";
-import path from "node:path";
 import type Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
-import { dataDir, getSettings, type CompanyProfile } from "@jd/core";
+import { fileStore, getSettings, type CompanyProfile } from "@jd/core";
 import { z } from "zod";
-import { getDb, schema } from "@jd/core/db";
+import { getDb, one, returned, schema } from "@jd/core/db";
 import { assertBudget, forModel, parseModel, parseStructured, recordMessageUsage } from "@jd/llm";
 import { boardUrl } from "@jd/sources";
 import { eq } from "drizzle-orm";
@@ -96,20 +94,20 @@ interface NotesCache {
   savedAt: number;
 }
 const NOTES_TTL_MS = 86_400_000;
-const notesPath = (companyId: number) => path.join(dataDir(), "files", "research", `company-${companyId}.json`);
+const notesKey = (companyId: number) => `research/company-${companyId}.json`;
 
-function readNotesCache(companyId: number): NotesCache | null {
+async function readNotesCache(companyId: number): Promise<NotesCache | null> {
   try {
-    const c = JSON.parse(fs.readFileSync(notesPath(companyId), "utf8")) as NotesCache;
-    return Date.now() - c.savedAt < NOTES_TTL_MS ? c : null;
+    const raw = await fileStore().get(notesKey(companyId));
+    const c = raw ? (JSON.parse(raw.toString("utf8")) as NotesCache) : null;
+    return c && Date.now() - c.savedAt < NOTES_TTL_MS ? c : null;
   } catch {
     return null;
   }
 }
 
-function writeNotesCache(companyId: number, c: NotesCache): void {
-  fs.mkdirSync(path.dirname(notesPath(companyId)), { recursive: true });
-  fs.writeFileSync(notesPath(companyId), JSON.stringify(c));
+async function writeNotesCache(companyId: number, c: NotesCache): Promise<void> {
+  await fileStore().put(notesKey(companyId), JSON.stringify(c), "application/json");
 }
 
 /** URLs Claude actually retrieved or cited, collected from server tool results and citations. */
@@ -186,20 +184,20 @@ export async function researchCompany(
   opts: { background: boolean; reuseNotes?: boolean },
 ): Promise<CompanyProfileRow> {
   const db = getDb();
-  const c = db.select().from(company).where(eq(company.id, companyId)).get();
+  const c = await one(db.select().from(company).where(eq(company.id, companyId)));
   if (!c) throw new NonRetryableError(`Company ${companyId} not found`);
-  assertBudget(opts);
+  await assertBudget(opts);
 
-  const { models } = getSettings("ai");
-  const { maxWebSearches, maxWebFetches } = getSettings("research");
+  const { models } = await getSettings("ai");
+  const { maxWebSearches, maxWebFetches } = await getSettings("research");
   assertNativeSearch(models.research);
   const careersUrl = boardUrl(c.atsType, c.atsSlug);
 
-  let cached = opts.reuseNotes === false ? null : readNotesCache(companyId);
+  let cached = opts.reuseNotes === false ? null : await readNotesCache(companyId);
   if (!cached) {
     const research = forModel(models.research);
     cached = await gatherNotes(research.client, research.model, maxWebSearches, maxWebFetches, c, careersUrl, opts);
-    writeNotesCache(companyId, cached);
+    await writeNotesCache(companyId, cached);
   }
   const { notes, consulted } = cached;
 
@@ -213,27 +211,28 @@ export async function researchCompany(
     messages: [{ role: "user", content: `Company: ${c.name}\n\n<notes>\n${notes}\n</notes>` }],
     output_config: { format: zodOutputFormat(StructuredNotesSchema) },
   });
-  recordMessageUsage("company_structure", models.extraction, structured);
+  await recordMessageUsage("company_structure", models.extraction, structured);
   assertUsableStop(structured, "structure the research notes");
   const notesJson = parseStructured(structured, StructuredNotesSchema, "structured version of the research notes");
 
   const data = restrictSources(toCompanyProfile(notesJson), consulted, notes);
   const values = { companyId, data, consultedUrls: consulted, model: cached.model, enrichedAt: new Date() };
-  return db
-    .insert(companyProfile)
-    .values(values)
-    .onConflictDoUpdate({ target: companyProfile.companyId, set: values })
-    .returning()
-    .get();
+  return await returned(
+    db
+      .insert(companyProfile)
+      .values(values)
+      .onConflictDoUpdate({ target: companyProfile.companyId, set: values })
+      .returning(),
+  );
 }
 
-export function getCompanyProfile(companyId: number): CompanyProfileRow | null {
-  return getDb().select().from(companyProfile).where(eq(companyProfile.companyId, companyId)).get() ?? null;
+export async function getCompanyProfile(companyId: number): Promise<CompanyProfileRow | null> {
+  return await one(getDb().select().from(companyProfile).where(eq(companyProfile.companyId, companyId))) ?? null;
 }
 
-export function isProfileStale(row: CompanyProfileRow | null): boolean {
+export async function isProfileStale(row: CompanyProfileRow | null): Promise<boolean> {
   if (!row) return true;
-  const { refreshAfterDays } = getSettings("research");
+  const { refreshAfterDays } = await getSettings("research");
   return Date.now() - row.enrichedAt.getTime() > refreshAfterDays * 86_400_000;
 }
 
@@ -269,14 +268,14 @@ async function gatherNotes(
       // Auto-caching lets each server-side search round (and paused-turn continuations) read the prior context from cache.
       .stream({ model, max_tokens: 16000, system: RESEARCH_SYSTEM, tools, messages, cache_control: { type: "ephemeral" }, ...effortFor(model) })
       .finalMessage();
-    recordMessageUsage("company_research", model, response);
+    await recordMessageUsage("company_research", model, response);
     responses.push(response);
     if (response.stop_reason !== "pause_turn") {
       final = response;
       break;
     }
     messages.push({ role: "assistant", content: response.content });
-    if (i < MAX_CONTINUATIONS) assertBudget(opts);
+    if (i < MAX_CONTINUATIONS) await assertBudget(opts);
   }
   if (!final) throw new NonRetryableError("Research did not finish within the allowed continuations.");
   assertUsableStop(final, "research this company");

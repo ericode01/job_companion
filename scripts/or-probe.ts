@@ -6,9 +6,11 @@
  *   pnpm tsx scripts/or-probe.ts anthropic:claude-haiku-4-5 --search
  */
 import { loadEnv } from "@jd/core";
+import { initDb } from "@jd/core/db";
 import { probeModel } from "@jd/llm";
 
 loadEnv();
+await initDb();
 
 const [setting, ...flags] = process.argv.slice(2);
 if (!setting) {

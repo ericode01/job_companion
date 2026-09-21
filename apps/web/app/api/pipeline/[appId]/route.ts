@@ -1,6 +1,6 @@
 import { applicationEvents, getApplication, matchJobByUrl, setStatus } from "@jd/apply";
 import { APPLICATION_STATUSES } from "@jd/core";
-import { getDb, schema } from "@jd/core/db";
+import { getDb, one, schema } from "@jd/core/db";
 import { roundsFrom, timeline } from "@jd/mail";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
@@ -12,19 +12,20 @@ type Ctx = { params: Promise<{ appId: string }> };
 /** One application with its emails, interview rounds and status history (the pipeline panel). */
 export function GET(req: Request, { params }: Ctx) {
   return withUser(req, async (user) => {
-    const app = getApplication(user.id, Number((await params).appId));
+    const app = await getApplication(user.id, Number((await params).appId));
     if (!app) return notFound();
     const db = getDb();
     const linked = app.jobId
-      ? db
+      ? await one(
+        db
           .select({ title: schema.job.title, url: schema.job.url, locations: schema.job.locations, comp: schema.job.comp, closedAt: schema.job.closedAt, companyName: schema.company.name })
           .from(schema.job)
           .innerJoin(schema.company, eq(schema.company.id, schema.job.companyId))
-          .where(eq(schema.job.id, app.jobId))
-          .get()
+          .where(eq(schema.job.id, app.jobId)),
+      )
       : null;
-    const emails = timeline(user.id, app.id);
-    const events = applicationEvents(app.id);
+    const emails = await timeline(user.id, app.id);
+    const events = await applicationEvents(app.id);
     return json({
       app: {
         id: app.id,
@@ -45,7 +46,7 @@ export function GET(req: Request, { params }: Ctx) {
       emails,
       rounds: roundsFrom(emails),
       events,
-      dashboards: listDashboards(user.id).map(({ id, name }) => ({ id, name })),
+      dashboards: (await listDashboards(user.id)).map(({ id, name }) => ({ id, name })),
     });
   });
 }
@@ -60,26 +61,27 @@ const Patch = z.object({
 
 export function PATCH(req: Request, { params }: Ctx) {
   return withUser(req, async (user) => {
-    const app = getApplication(user.id, Number((await params).appId));
+    const app = await getApplication(user.id, Number((await params).appId));
     if (!app) return notFound();
     const body = Patch.parse(await readJson(req));
     const db = getDb();
     const set: Partial<typeof schema.application.$inferInsert> = {};
     if (body.searchId !== undefined) {
-      if (!getDashboard(user.id, body.searchId)) return notFound();
+      if (!await getDashboard(user.id, body.searchId)) return notFound();
       set.searchId = body.searchId;
     }
     if (body.notes !== undefined) set.notes = body.notes;
     let linked: "job" | "url" | undefined;
     if (body.postingUrl) {
-      const hit = matchJobByUrl(body.postingUrl);
+      const hit = await matchJobByUrl(body.postingUrl);
       const taken =
         hit &&
-        db
-          .select({ id: schema.application.id })
-          .from(schema.application)
-          .where(and(eq(schema.application.userId, user.id), eq(schema.application.jobId, hit.jobId)))
-          .get();
+        await one(
+          db
+            .select({ id: schema.application.id })
+            .from(schema.application)
+            .where(and(eq(schema.application.userId, user.id), eq(schema.application.jobId, hit.jobId))),
+        );
       if (hit && (!taken || taken.id === app.id)) {
         set.jobId = hit.jobId;
         linked = "job";
@@ -90,8 +92,8 @@ export function PATCH(req: Request, { params }: Ctx) {
         linked = "url";
       }
     }
-    if (Object.keys(set).length) db.update(schema.application).set({ ...set, updatedAt: new Date() }).where(eq(schema.application.id, app.id)).run();
-    if (body.status && body.status !== app.status) setStatus(app.id, body.status, { source: "manual" });
+    if (Object.keys(set).length) await db.update(schema.application).set({ ...set, updatedAt: new Date() }).where(eq(schema.application.id, app.id));
+    if (body.status && body.status !== app.status) await setStatus(app.id, body.status, { source: "manual" });
     return json({ ok: true, linked });
   });
 }
@@ -99,9 +101,9 @@ export function PATCH(req: Request, { params }: Ctx) {
 /** Stops tracking it. Its emails stay in your mailbox, and here they're set aside. */
 export function DELETE(req: Request, { params }: Ctx) {
   return withUser(req, async (user) => {
-    const app = getApplication(user.id, Number((await params).appId));
+    const app = await getApplication(user.id, Number((await params).appId));
     if (!app) return notFound();
-    getDb().delete(schema.application).where(eq(schema.application.id, app.id)).run();
+    await getDb().delete(schema.application).where(eq(schema.application.id, app.id));
     return json({ ok: true });
   });
 }

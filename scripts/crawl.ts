@@ -1,5 +1,8 @@
 /** pnpm crawl [--force] */
+import { initDb } from "@jd/core/db";
 import { runCrawl } from "@jd/sources";
+
+await initDb();
 
 const force = process.argv.includes("--force");
 const started = Date.now();

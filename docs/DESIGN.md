@@ -355,6 +355,7 @@ When a cap is reached, background work (crawl scoring, enrichment, digests) paus
 | 2026-09-18 | Users | Several people with accounts; hosted over HTTPS; email + password; first account is admin, others by invite (§19) |
 | 2026-09-18 | Look and navigation | "AI companion" palette; one dashboard per search behind a header switcher; one combined daily email with a section per dashboard |
 | 2026-09-21 | Database and hosting | Postgres on Cloud SQL (private IP) with the app on a GCE VM in the same region; files in a GCS bucket; PGlite for tests, docker-compose Postgres for development (§24) |
+| 2026-09-21 | Postgres version | 18, in production and the dev container; tests can run against a real server with `TEST_DATABASE_URL` (§24) |
 
 ## 14. Open questions
 None right now. New questions will be added here as they come up during the build.
@@ -919,6 +920,11 @@ without it:
   checker for floating promises, promise conditions and async array callbacks found these.
 - **NUL characters.** Postgres refuses U+0000 in text; SQLite stored it. The crawler strips it, so
   one stray byte can't fail a whole board.
+- **A connection ending while idle.** When Postgres ends a connection sitting in the pool (a
+  restart, a Cloud SQL maintenance window or failover), node-postgres emits `error` on the pool, and
+  with no listener Node ends the process: restarting the dev database killed the worker. The pool now
+  logs it and opens a fresh connection on the next query. Found while moving to Postgres 18, not
+  caused by it.
 
 ### Tests run on a driver that behaves like production's
 
@@ -935,10 +941,25 @@ PDFs into the file store (rewriting `resume.file_path` to a storage key). It the
 and compares it with its SQLite original as a multiset of canonical fingerprints — no dependence on
 row order or collation — and confirms each sequence is past its table's highest id.
 
-On this install's data: **26 tables, 37,964 rows, every row identical, in 23s** against Postgres 17.
+On this install's data: **26 tables, 37,964 rows, every row identical, in 23s** against Postgres 17, and the same again against 18.
 It refuses a non-empty target, and changing one value or deleting one row in the copy is reported as
 exactly that. Postgres comes out at **336MB against SQLite's 512MB**: TOAST compresses the job
 descriptions that make up nearly all of it.
+
+### Postgres 18
+
+Production runs Postgres 18 (Cloud SQL `POSTGRES_18`), and so does the dev container. Nothing in the
+18 release notes touches what the app uses: no triggers, generated columns, `COPY`, full-text search
+or jsonb-to-scalar casts; passwords are SCRAM on both. What did change is the Docker image, which
+keeps data under `/var/lib/postgresql/18/docker`, so the volume mounts at `/var/lib/postgresql` and
+has a new name (a major version can't open the old files anyway).
+
+PGlite embeds Postgres 17, so `useTestDb()` also runs against a real server when `TEST_DATABASE_URL`
+is set, each test file in its own database, dropped afterwards. Checked against 18.6: all tests pass
+(one more than on PGlite: the dropped-connection test needs a server); the SQLite copy is identical;
+four processes migrating at once all succeed; four claiming 200 tasks take each once; four enqueueing
+the same 25 keys leave 25 live tasks; the dev data moved from 17 by `pg_dump`/`pg_restore` checksums
+identical table by table, and the app's pages render on it.
 
 ### Cutover and rollback
 

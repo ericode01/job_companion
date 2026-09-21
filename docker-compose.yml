@@ -3,7 +3,7 @@
 # Port 54317 rather than 5432, so it runs beside a Postgres you may already have.
 services:
   postgres:
-    image: postgres:17
+    image: postgres:18
     environment:
       POSTGRES_USER: jobs
       POSTGRES_PASSWORD: jobs
@@ -11,7 +11,9 @@ services:
     ports:
       - "127.0.0.1:54317:5432"
     volumes:
-      - jc-postgres:/var/lib/postgresql/data
+      # Postgres 18 images keep data in a versioned directory under /var/lib/postgresql, so the
+      # volume mounts there (not at .../data, as before 18).
+      - jc-postgres-18:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U jobs -d jobs"]
       interval: 2s
@@ -19,4 +21,4 @@ services:
       retries: 20
 
 volumes:
-  jc-postgres:
+  jc-postgres-18:

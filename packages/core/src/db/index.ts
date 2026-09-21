@@ -33,11 +33,22 @@ function databaseUrl(): string {
 export function getDb(): Db {
   if (g.__jdDb) return g.__jdDb;
   const url = databaseUrl();
-  // allowExitOnIdle: a script that has finished its queries exits instead of waiting on the pool.
-  const pool = new pg.Pool({ connectionString: url, max: 10, allowExitOnIdle: true });
-  g.__jdDb = drizzle(pool, { schema }) as unknown as Db;
+  g.__jdDb = drizzle(openPool(url), { schema }) as unknown as Db;
   g.__jdMigrate = () => migrateLocked(url);
   return g.__jdDb;
+}
+
+/**
+ * A connection pool that survives the database going away. When Postgres ends a connection sitting
+ * idle in the pool (a restart, a Cloud SQL maintenance window or failover), node-postgres emits
+ * "error" on the pool, and an EventEmitter with no listener for it throws, ending the process. With
+ * one, the dead connection is dropped and the next query opens a new one.
+ */
+export function openPool(url: string, max = 10): pg.Pool {
+  // allowExitOnIdle: a script that has finished its queries exits instead of waiting on the pool.
+  const pool = new pg.Pool({ connectionString: url, max, allowExitOnIdle: true });
+  pool.on("error", (err) => console.error("[db] lost an idle connection:", err.message));
+  return pool;
 }
 
 /** Any fixed number; it only has to be the same in every process that migrates. */

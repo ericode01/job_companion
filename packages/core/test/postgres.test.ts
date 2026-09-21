@@ -47,3 +47,22 @@ describe("AI spend", () => {
     expect(row).toMatchObject({ usd: 0.75, calls: 2 });
   });
 });
+
+describe("the connection pool", () => {
+  // Needs a real server to end the connection, so it runs only with TEST_DATABASE_URL set.
+  it.runIf(process.env.TEST_DATABASE_URL)("outlives the server ending an idle connection", async () => {
+    const { openPool } = await import("../src/db");
+    const pool = openPool(process.env.TEST_DATABASE_URL!, 2);
+    const killer = openPool(process.env.TEST_DATABASE_URL!, 1);
+    try {
+      const { rows } = await pool.query<{ pid: number }>("select pg_backend_pid() as pid");
+      expect(pool.idleCount).toBe(1);
+      await killer.query("select pg_terminate_backend($1)", [rows[0]!.pid]);
+      await new Promise((r) => setTimeout(r, 200));
+      // Without the pool's error listener, the process would already have crashed.
+      expect((await pool.query("select 1 as ok")).rows[0]).toEqual({ ok: 1 });
+    } finally {
+      await Promise.all([pool.end(), killer.end()]);
+    }
+  });
+});

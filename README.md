@@ -17,6 +17,8 @@ pnpm setup                   # create the tables, import ~275 companies, pull th
 pnpm dev                     # http://127.0.0.1:4317
 ```
 
+**Upgrading from the Postgres 17 dev database:** `docker-compose.yml` now runs Postgres 18 on a new volume, `jc-postgres-18`; a major version can't open the old one's files. If you already had data in the old container, dump it before switching (`docker compose exec -T postgres pg_dump -U jobs -d jobs -Fc > jobs.dump`), then after `docker compose up -d` restore it with `docker compose exec -T postgres pg_restore -U jobs -d jobs --no-owner < jobs.dump`. The old volume stays until you remove it (`docker volume rm job-discovery-calude_jc-postgres`).
+
 `pnpm dev` starts the web app and the background worker (company research, fit scores, resume reading, cover letters, job-board refreshes, digests).
 
 **First visit:** the app asks you to create the first account. That account is the admin, and anything already in this install (resume, searches, applications, answers) moves into it. Everyone else joins through invite links from **Admin → People and invites**, and a new person goes through a four-step onboarding: what they're looking for, resume, "about you", and common application questions.
@@ -49,7 +51,7 @@ APP_URL=https://jobs.example.com pnpm --filter @jd/extension build
 
 The app is one Node process for the web app plus one for the worker, a Postgres database, and a bucket for uploaded files. It holds nothing on local disk that matters, so the VM is disposable. On Google Cloud:
 
-- **Cloud SQL for PostgreSQL 17**, private IP only (no public IP), with automated backups and point-in-time recovery. The smallest shared-core tier is plenty for a handful of people.
+- **Cloud SQL for PostgreSQL 18**, private IP only (no public IP), with automated backups and point-in-time recovery. The smallest shared-core tier is plenty for a handful of people.
 - **A GCE VM in the same region and VPC** (e2-small is enough), so every query stays on the private network. Give it a service account with `roles/cloudsql.client` and object admin on the bucket; the app uses it directly, so there's no key file.
 - **A GCS bucket** in the same region, uniform bucket-level access, no public access.
 
@@ -75,6 +77,16 @@ The app is one Node process for the web app plus one for the worker, a Postgres 
 
 Without Docker: `pnpm install && pnpm --filter @jd/web build && APP_URL=$APP_ORIGIN pnpm --filter @jd/extension build`, then `HOST=127.0.0.1 PORT=4317 pnpm serve` under a process manager.
 
+**Moving a local install's data to Cloud SQL.** Once you've run the app on the local Postgres, that is your latest data, not `data/app.db`. Stop the local app and worker, then dump it and restore the dump into the empty Cloud SQL database (from the VM, which can reach the private address), and copy `data/files/` into the bucket keeping its paths:
+
+```bash
+docker compose exec -T postgres pg_dump -U jobs -d jobs -Fc > jobs.dump
+pg_restore --no-owner --no-acl --exit-on-error -d "$DATABASE_URL" jobs.dump
+gcloud storage cp -r data/files/* gs://$GCS_BUCKET/
+```
+
+`pg_restore` needs to be version 18, like the server: on Debian 12, `docker run --rm -i postgres:18 pg_restore …` saves installing it.
+
 **Moving an install that still runs on SQLite** (`data/app.db`): stop it, keep a copy of `data/`, then with `DATABASE_URL` pointing at an empty database and `GCS_BUCKET` set, run `pnpm db:copy-sqlite`. It copies every table in one transaction, moves the resume PDFs into the bucket, then reads every row back and compares it with the original, and refuses a database that already has data. Start the new version once it reports every row identical. Until anyone writes to Postgres, the old version against the untouched `data/` is your rollback.
 
 ## Commands
@@ -91,7 +103,8 @@ Without Docker: `pnpm install && pnpm --filter @jd/web build && APP_URL=$APP_ORI
 | `pnpm seed` | Import `packages/sources/seed/companies.json` into the DB |
 | `pnpm seed:build` | Re-verify `seed/candidates.txt` by guessing Greenhouse/Lever/Ashby slugs |
 | `pnpm find-boards [--all] [--dry-run]` | Read each candidate's careers page to find its board — the only way Workday tenants turn up |
-| `pnpm test` | Unit tests |
+| `pnpm test` | Unit tests, on PGlite (in-memory Postgres) |
+| `TEST_DATABASE_URL=postgres://… pnpm test` | The same tests against a real Postgres server, each file in a database of its own that's dropped afterwards |
 | `pnpm typecheck` | Typecheck all packages and scripts |
 | `pnpm db:generate` | Generate a migration after editing `packages/core/src/db/schema.ts` |
 | `pnpm db:migrate` | Create or update the tables (the app also does this when it starts) |

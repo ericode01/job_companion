@@ -417,6 +417,12 @@ The refresh followed data from the ui-ux-pro-max repo. I read its CSVs directly 
    4. asks the app to answer the rest
    5. shows a review panel
    - It never submits. It detects the confirmation page and marks the job Applied.
+4. **When you come back** (`ApplyDialog`): the extension is the only thing that can notice a
+   submission, and only on a board it fills, with a confirmation page it recognises. Everyone else's
+   card would sit in Applying for good. So on returning to the tab the dialog re-reads the
+   application: already Applied (the extension got there first) and it says so; otherwise it asks
+   "Did you submit your application?" and one button records it, as an ordinary manual move. With the
+   extension the same button is there, worded as a fallback.
 
 ### Answering questions (server, `packages/apply`)
 Questions are answered in this order:
@@ -646,7 +652,8 @@ Dates come back in the person's time zone: a bare deadline date means the end of
 ### UI
 
 - **`/mailbox`**: benefits, a "What I can and can't do" panel, a look-back picker, Connect Gmail, and an app-password form with per-provider instructions. Once connected: progress, a summary of what was found, Check now / Pause / Disconnect, and "Check these".
-- **Pipeline** (`/pipeline`): the Needs-your-reply strip, "Check these", "From your email this week" with undo, card chips (Confirmed, Action needed, Applied elsewhere, rounds, email count), and a collapsible Rejected column (remembered per browser).
+- **Pipeline** (`/pipeline`): the Needs-your-reply strip, "Check these", "From your email this week" with undo, card chips (Action needed, No confirmation, Applied elsewhere, rounds, email count), and a collapsible Rejected column (remembered per browser).
+  - **No confirmation** replaced a ✓ Confirmed chip that marked the normal case (23 of 24 Applied cards had one) and meant nothing past Applied, where an interview invitation already proves the application arrived. The flag is the silence instead (`missingConfirmation`, `lib/pipeline-groups.ts`): still at Applied, no confirmation, no mail at all about it, sent by you rather than found in email, a week gone, and a connected mailbox that isn't asking to be reconnected. Anything less and it would cry wolf. The application panel keeps the dated "Confirmed <date>" line, which is a history rather than a badge.
 - **Application panel** (`?app=` deep link): status, which search, posting links or "Link to a job posting", round tracker, emails grouped by stage with an action box, Open in Gmail / Open in Mail / Reply, "This is wrong", and history with undo.
 - **Elsewhere**: the job page shows the same timeline. The header's Pipeline item shows the "to reply" count, the Email tab is now "Digest", onboarding's last step offers to connect the inbox, and Admin → Mailbox sync has the Google setup steps, settings and connection health.
 

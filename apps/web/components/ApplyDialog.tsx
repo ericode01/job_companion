@@ -6,7 +6,7 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Alert, Skeleton, Spinner } from "@/components/ui";
 import { timeAgo } from "@/lib/format";
 import { openThroughExtension, useExtension } from "@/lib/extension";
-import type { TaskStatus } from "@/lib/types";
+import { setApplicationStatus, type TaskStatus } from "@/lib/types";
 
 interface PrepareState {
   application: { id: number; status: string; coverLetterChoice: "yes" | "no" | null; coverLetter: string | null; coverLetterWarnings: string[] | null } | null;
@@ -61,9 +61,11 @@ function ApplyDialog({ jobId, title, company, applyUrl, searchId, onApplied, onC
   const [showChanges, setShowChanges] = useState(false);
   const [letter, setLetter] = useState("");
   const [letterDirty, setLetterDirty] = useState(false);
-  const [busy, setBusy] = useState<null | "prepare" | "open" | "save" | "tailor">(null);
+  const [busy, setBusy] = useState<null | "prepare" | "open" | "save" | "tailor" | "applied">(null);
   const [error, setError] = useState<string | null>(null);
   const [opened, setOpened] = useState<"extension" | "plain" | null>(null);
+  /** After the board opens: whether to ask if you submitted it, and what you answered. */
+  const [asked, setAsked] = useState<"unasked" | "asking" | "dismissed" | "marked" | "confirmed">("unasked");
   const prefillable = canPrefill(applyUrl);
 
   useEffect(() => {
@@ -93,6 +95,46 @@ function ApplyDialog({ jobId, title, company, applyUrl, searchId, onApplied, onC
     const t = setInterval(() => void load(), 3000);
     return () => clearInterval(t);
   }, [generating, tailoring, load]);
+
+  /**
+   * The board is open in another tab, so coming back here is the moment you know whether you
+   * submitted. Re-read the application first: with the extension, the site's confirmation may
+   * already have moved it, and then there is nothing to ask.
+   */
+  useEffect(() => {
+    if (!opened) return;
+    const onReturn = () => {
+      void load().then((s) => {
+        if (s.application?.status === "applied") setAsked((a) => (a === "marked" ? a : "confirmed"));
+        else setAsked((a) => (a === "unasked" || a === "dismissed" ? "asking" : a));
+      });
+    };
+    // Both fire on the way back from the board's tab; the window regaining focus is the signal,
+    // and visibility only matters for the tab switch, where focus may not move at all.
+    const onVisible = () => document.visibilityState === "visible" && onReturn();
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onReturn);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onReturn);
+    };
+  }, [opened, load]);
+
+  /** Records what you say you did. The same call as the job page's Tracker, so it's a manual move with history. */
+  async function markApplied() {
+    setBusy("applied");
+    setError(null);
+    try {
+      await setApplicationStatus(jobId, "applied", searchId);
+      setAsked("marked");
+      onApplied();
+    } catch (err) {
+      // A failed fetch says "Load failed"; only the API's own message is worth repeating.
+      const message = err instanceof Error ? err.message : "";
+      setError(!message || /fetch|network|load failed/i.test(message) ? "Couldn't reach the server, so it's still in Applying." : message);
+    }
+    setBusy(null);
+  }
 
   async function tailor() {
     setBusy("tailor");
@@ -230,6 +272,32 @@ function ApplyDialog({ jobId, title, company, applyUrl, searchId, onApplied, onC
               page to copy from.
             </Alert>
           )}
+          {asked === "marked" || asked === "confirmed" ? (
+            <p className="flex items-center gap-2 text-sm font-medium text-good">
+              <CheckCircle2 aria-hidden className="size-4" />
+              {asked === "confirmed" ? "The site confirmed it — moved to Applied." : "Moved to Applied."}
+            </p>
+          ) : asked === "asking" ? (
+            // Asked on your way back, when you know the answer and nothing else here does.
+            <div className="rounded-lg border border-border bg-surface-2 p-3">
+              <p className="text-sm font-medium">Did you submit your application?</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <button className="btn-primary" onClick={() => void markApplied()} disabled={busy !== null}>
+                  {busy === "applied" ? <Spinner /> : <CheckCircle2 aria-hidden className="size-4" />} Yes, mark it Applied
+                </button>
+                <button className="btn" onClick={() => setAsked("dismissed")} disabled={busy !== null}>
+                  Not yet
+                </button>
+              </div>
+            </div>
+          ) : (
+            // The extension usually reports it, so there it's a fallback rather than the main action.
+            <button className={opened === "extension" ? "btn" : "btn-primary"} onClick={() => void markApplied()} disabled={busy !== null}>
+              {busy === "applied" ? <Spinner /> : <CheckCircle2 aria-hidden className="size-4" />}
+              {opened === "extension" ? "Didn't move on its own? Mark as Applied" : "I've submitted it"}
+            </button>
+          )}
+          {error && <Alert tone="danger">{error}</Alert>}
           <div className="flex justify-end">
             <button className="btn" onClick={close}>
               Done

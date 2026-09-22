@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { PipelineCard } from "../lib/pipeline-types";
 import { formatFactValue } from "../lib/format";
-import { bucketOf, foldKey, GROUP_AT, groupColumn, groupLabel, needsReplyCount, parseFolded } from "../lib/pipeline-groups";
+import { bucketOf, foldKey, GROUP_AT, groupColumn, groupLabel, missingConfirmation, needsReplyCount, parseFolded } from "../lib/pipeline-groups";
 
 const NOW = Date.parse("2026-09-19T12:00:00Z");
 const daysAgo = (n: number) => new Date(NOW - n * 86_400_000).toISOString();
@@ -109,5 +109,27 @@ describe("folding date groups", () => {
   it("counts what a folded group is hiding that needs a reply", () => {
     expect(needsReplyCount([card(1, { openActions: 2 }), card(2), card(3, { openActions: 1 })])).toBe(2);
     expect(needsReplyCount([])).toBe(0);
+  });
+});
+
+describe("flagging an application nothing was heard about", () => {
+  const mailbox = { connected: true, needsReauth: false };
+  const silent = (over: Partial<PipelineCard> = {}) => card(1, { status: "applied", appliedAt: daysAgo(8), ...over });
+  const flagged = (over: Partial<PipelineCard> = {}, box = mailbox) => missingConfirmation(silent(over), box, NOW);
+
+  it("flags a week of silence on something you sent", () => {
+    expect(flagged()).toBe(true);
+  });
+
+  it("stays quiet while anything explains the silence", () => {
+    expect(flagged({ appliedAt: daysAgo(3) })).toBe(false); // confirmations arrive in minutes
+    expect(flagged({ confirmedAt: daysAgo(7) })).toBe(false);
+    expect(flagged({ emailCount: 1 })).toBe(false); // heard something, so it arrived
+    expect(flagged({ status: "interview" })).toBe(false); // an invitation proves it arrived
+    expect(flagged({ status: "applying" })).toBe(false); // not sent yet
+    expect(flagged({ source: "email" })).toBe(false); // found in email: there is mail about it
+    expect(flagged({ appliedAt: null })).toBe(false);
+    expect(flagged({}, { connected: false, needsReauth: false })).toBe(false); // nothing to hear from
+    expect(flagged({}, { connected: true, needsReauth: true })).toBe(false); // sync is stale
   });
 });

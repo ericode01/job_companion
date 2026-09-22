@@ -1,7 +1,7 @@
 "use client";
 
 import type { ApplicationStatus } from "@jd/core/shared";
-import { AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, GripVertical, KanbanSquare, Mail, MailCheck, Plus, Search, Undo2, X } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, GripVertical, KanbanSquare, Mail, MailQuestionMark, Plus, Search, Undo2, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -14,7 +14,7 @@ import { FitBadge } from "@/components/Status";
 import { ConfirmDialog, EmptyState, type Feedback, FeedbackBar, Skeleton } from "@/components/ui";
 import { formatComp, timeAgo } from "@/lib/format";
 import { shortDate } from "@/lib/mail-labels";
-import { foldKey, groupColumn, needsReplyCount, parseFolded } from "@/lib/pipeline-groups";
+import { foldKey, groupColumn, missingConfirmation, needsReplyCount, parseFolded } from "@/lib/pipeline-groups";
 import { emailAction, type ChangeJson, type PipelineCard, type PipelineData, type SearchTag } from "@/lib/pipeline-types";
 import { STATUS_LABELS } from "@/lib/types";
 
@@ -468,6 +468,7 @@ export function PipelineBoard() {
                               <Card
                                 key={c.id}
                                 card={c}
+                                mailbox={data.mailbox}
                                 dragging={dragging === c.id}
                                 onOpen={() => openPanel(c.id)}
                                 onDragStart={() => setDragging(c.id)}
@@ -549,6 +550,7 @@ function ScopeChip({ label, note, count, active, onClick }: { label: string; not
 
 function Card({
   card: c,
+  mailbox,
   dragging,
   onOpen,
   onDragStart,
@@ -556,6 +558,7 @@ function Card({
   onStatus,
 }: {
   card: PipelineCard;
+  mailbox: PipelineData["mailbox"];
   dragging: boolean;
   onOpen: () => void;
   onDragStart: () => void;
@@ -582,9 +585,10 @@ function Card({
       </div>
       <p className="text-muted">{c.companyName}</p>
       <div className="flex flex-wrap items-center gap-1.5">
-        {c.confirmedAt && (
-          <span className="chip bg-good-soft text-good" title={`Confirmation email ${shortDate(c.confirmedAt)}`}>
-            <MailCheck aria-hidden className="size-3" /> Confirmed
+        {/* Not the confirmations, which are the normal case: the silence, which may mean it never arrived. */}
+        {missingConfirmation(c, mailbox) && (
+          <span className="chip bg-surface-2 text-muted" title={`Nothing heard since you applied on ${shortDate(c.appliedAt!)}. Worth checking it went through.`}>
+            <MailQuestionMark aria-hidden className="size-3" /> No confirmation
           </span>
         )}
         <FitBadge score={c.fitScore} />

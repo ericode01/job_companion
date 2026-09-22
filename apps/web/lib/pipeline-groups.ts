@@ -30,6 +30,23 @@ export function bucketOf(card: Pick<PipelineCard, "lastEmailAt" | "appliedAt" | 
   return age <= THREE_WEEKS ? "waiting" : "quiet";
 }
 
+/**
+ * An application you sent that has produced no mail at all, a week on: worth checking it arrived.
+ * Every clause keeps the chip rare enough to mean something. Past Applied, an interview invitation
+ * has already proved the application arrived; any email about it says the same; a card found in
+ * email obviously has mail; and without a working mailbox there is nothing to have heard from.
+ */
+export function missingConfirmation(
+  card: Pick<PipelineCard, "status" | "source" | "confirmedAt" | "appliedAt" | "emailCount">,
+  mailbox: { connected: boolean; needsReauth: boolean },
+  now = Date.now(),
+): boolean {
+  if (!mailbox.connected || mailbox.needsReauth) return false;
+  if (card.status !== "applied" || card.source === "email") return false;
+  if (card.confirmedAt || card.emailCount > 0 || !card.appliedAt) return false;
+  return now - Date.parse(card.appliedAt) > WEEK;
+}
+
 export function groupLabel(columnKey: string, bucket: Bucket): string {
   return LABELS[WAITING_ON_THEM.has(columnKey) ? "theirs" : "yours"][bucket];
 }

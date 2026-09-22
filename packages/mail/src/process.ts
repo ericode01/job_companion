@@ -1,4 +1,4 @@
-import { lastManualMoveAt, setStatus } from "@jd/apply";
+import { impliesApplied, lastManualMoveAt, setStatus } from "@jd/apply";
 import { type EmailClassification, getSettings, getUser } from "@jd/core";
 import { getDb, one, schema } from "@jd/core/db";
 import { and, eq, isNull, lt, ne } from "drizzle-orm";
@@ -187,7 +187,8 @@ export async function applyToPipeline(
       jobUrl: postingUrl(opts.links ?? []),
       jobId: outcome.jobId,
       status: status!,
-      appliedAt: row.kind === "application_received" ? row.receivedAt : null,
+      // An interview or rejection email is proof you applied, by then at the latest.
+      appliedAt: impliesApplied(status!, "email") ? row.receivedAt : null,
       confirmedAt: row.kind === "application_received" ? row.receivedAt : null,
       emailId: row.id,
     });
@@ -209,13 +210,21 @@ export async function applyToPipeline(
     await setReview(row.id, "needs_review");
     return { created: null, moved: false };
   }
-  if (d.confirm && !app.confirmedAt) {
+  if (opts.confirmedByPerson) await setReview(row.id, "confirmed");
+  const confirm = async () => {
+    if (!d.confirm || app.confirmedAt) return;
     await getDb().update(schema.application).set({ confirmedAt: row.receivedAt }).where(eq(schema.application.id, app.id));
     app.confirmedAt = row.receivedAt;
+  };
+  // A confirmation for a card already past Applied moves nothing, so there's no move to undo it with.
+  if (!d.move) {
+    await confirm();
+    return { created: null, moved: false };
   }
-  if (opts.confirmedByPerson) await setReview(row.id, "confirmed");
-  if (!d.move) return { created: null, moved: false };
-  const updated = await setStatus(app.id, d.move, { source: "email", emailId: row.id, appliedAt: row.kind === "application_received" ? row.receivedAt : undefined });
+  // Moved and confirmed in one step, so undoing the move takes the ✓ Confirmed back with it.
+  const updated = await setStatus(app.id, d.move, { source: "email", emailId: row.id, appliedAt: row.receivedAt, confirmedAt: d.confirm ? row.receivedAt : null });
   app.status = updated.status;
+  app.confirmedAt = updated.confirmedAt;
+  await confirm();
   return { created: null, moved: true };
 }

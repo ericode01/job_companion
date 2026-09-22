@@ -1,4 +1,4 @@
-import { matchJobByUrl, recordCreated } from "@jd/apply";
+import { impliesApplied, matchJobByUrl, recordCreated } from "@jd/apply";
 import { APPLICATION_STATUSES } from "@jd/core";
 import { getDb, one, returned, schema } from "@jd/core/db";
 import { activeConnections, chooseDashboard, emailChangesSince, openActions, reviewQueue } from "@jd/mail";
@@ -62,7 +62,7 @@ export function POST(req: Request) {
           jobUrl: hit ? null : body.jobUrl || null,
           source: "manual",
           status: body.status,
-          appliedAt: body.status === "applied" || body.status === "interview" || body.status === "offer" ? new Date() : null,
+          appliedAt: impliesApplied(body.status, "manual") ? new Date() : null,
         })
         .returning(),
     );

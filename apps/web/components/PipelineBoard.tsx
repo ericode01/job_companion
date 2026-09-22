@@ -14,7 +14,7 @@ import { FitBadge } from "@/components/Status";
 import { ConfirmDialog, EmptyState, type Feedback, FeedbackBar, Skeleton } from "@/components/ui";
 import { formatComp, timeAgo } from "@/lib/format";
 import { shortDate } from "@/lib/mail-labels";
-import { groupColumn } from "@/lib/pipeline-groups";
+import { foldKey, groupColumn, needsReplyCount, parseFolded } from "@/lib/pipeline-groups";
 import { emailAction, type ChangeJson, type PipelineCard, type PipelineData, type SearchTag } from "@/lib/pipeline-types";
 import { STATUS_LABELS } from "@/lib/types";
 
@@ -31,6 +31,7 @@ const COLUMNS: { key: string; title: string; statuses: ApplicationStatus[] }[] =
 const REJECTED_KEY = "jc:rejected-open";
 const SCOPE_KEY = "jc:pipeline-search";
 const STAGE_KEY = "jc:pipeline-stage";
+const FOLDED_KEY = "jc:pipeline-folded";
 function read(key: string): string | null {
   try {
     return localStorage.getItem(key);
@@ -79,6 +80,8 @@ export function PipelineBoard() {
   const [announce, setAnnounce] = useState("");
   const [panel, setPanel] = useState<number | null>(null);
   const [rejectedOpen, setRejectedOpen] = useState(false);
+  /** Date groups you've folded, as foldKey()s. */
+  const [folded, setFolded] = useState<Set<string>>(() => new Set());
   const [scope, setScope] = useState<number | null>(null);
   const [q, setQ] = useState("");
   const [feedback, setFeedback] = useState<Feedback | null>(null);
@@ -101,6 +104,7 @@ export function PipelineBoard() {
   useEffect(() => {
     void load();
     setRejectedOpen(read(REJECTED_KEY) === "1");
+    setFolded(parseFolded(read(FOLDED_KEY)));
     const url = new URL(window.location.href);
     const fromUrl = Number(url.searchParams.get("app"));
     if (fromUrl) setPanel(fromUrl);
@@ -226,6 +230,15 @@ export function PipelineBoard() {
     setRejectedOpen((o) => {
       write(REJECTED_KEY, !o ? "1" : "0");
       return !o;
+    });
+  };
+
+  const toggleFold = (key: string) => {
+    setFolded((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(key)) next.add(key);
+      write(FOLDED_KEY, JSON.stringify([...next]));
+      return next;
     });
   };
 
@@ -415,34 +428,58 @@ export function PipelineBoard() {
                       )}
                     </span>
                   </h2>
-                  {groups.map((g) => (
-                    <div key={g.bucket} className="space-y-2">
-                      {/* Pinned only where the page itself scrolls: between md and xl the row scrolls
-                          sideways, and a sticky header there would sit on top of the cards. */}
-                      {g.label && (
-                        <h3 className="sticky top-16 z-10 -mx-1 rounded-md bg-surface-2/95 px-1.5 py-1 text-[11px] font-medium text-muted backdrop-blur md:static xl:sticky xl:top-16">
-                          {g.label} <span className="tabular-nums">({g.cards.length})</span>
-                        </h3>
-                      )}
-                      <ul className="space-y-2 pb-2">
-                        {g.cards.map((c) =>
-                          isRejected ? (
-                            <CompactCard key={c.id} card={c} onOpen={() => openPanel(c.id)} onDragStart={() => setDragging(c.id)} onDragEnd={() => setDragging(null)} />
-                          ) : (
-                            <Card
-                              key={c.id}
-                              card={c}
-                              dragging={dragging === c.id}
-                              onOpen={() => openPanel(c.id)}
-                              onDragStart={() => setDragging(c.id)}
-                              onDragEnd={() => setDragging(null)}
-                              onStatus={(s) => (s === null ? setConfirmRemove(c) : void move(c, s))}
-                            />
-                          ),
+                  {groups.map((g) => {
+                    const key = foldKey(col.key, g.bucket);
+                    const isFolded = g.label !== null && folded.has(key);
+                    const listId = `pipeline-group-${col.key}-${g.bucket}`;
+                    const waiting = isFolded ? needsReplyCount(g.cards) : 0;
+                    return (
+                      <div key={g.bucket} className="space-y-2">
+                        {/* Pinned only where the page itself scrolls: between md and xl the row scrolls
+                            sideways, and a sticky header there would sit on top of the cards. */}
+                        {g.label && (
+                          <h3 className="sticky top-16 z-10 -mx-1 rounded-md bg-surface-2/95 backdrop-blur md:static xl:sticky xl:top-16">
+                            <button
+                              type="button"
+                              onClick={() => toggleFold(key)}
+                              aria-expanded={!isFolded}
+                              aria-controls={listId}
+                              className="flex min-h-11 w-full items-center gap-1 rounded-md px-1.5 py-1 text-left text-[11px] font-medium text-muted transition-colors duration-150 hover:bg-surface-2 hover:text-text md:min-h-8"
+                            >
+                              <ChevronDown aria-hidden className={`size-3.5 shrink-0 transition-transform duration-150 motion-reduce:transition-none ${isFolded ? "-rotate-90" : ""}`} />
+                              <span>
+                                {g.label} <span className="tabular-nums">({g.cards.length})</span>
+                              </span>
+                              {/* Folding must not hide something waiting on you. */}
+                              {waiting > 0 && (
+                                <span className="ml-auto flex items-center gap-1 text-warn">
+                                  <Mail aria-hidden className="size-3" />
+                                  {waiting} {waiting === 1 ? "needs" : "need"} reply
+                                </span>
+                              )}
+                            </button>
+                          </h3>
                         )}
-                      </ul>
-                    </div>
-                  ))}
+                        <ul id={listId} hidden={isFolded} className="space-y-2 pb-2">
+                          {g.cards.map((c) =>
+                            isRejected ? (
+                              <CompactCard key={c.id} card={c} onOpen={() => openPanel(c.id)} onDragStart={() => setDragging(c.id)} onDragEnd={() => setDragging(null)} />
+                            ) : (
+                              <Card
+                                key={c.id}
+                                card={c}
+                                dragging={dragging === c.id}
+                                onOpen={() => openPanel(c.id)}
+                                onDragStart={() => setDragging(c.id)}
+                                onDragEnd={() => setDragging(null)}
+                                onStatus={(s) => (s === null ? setConfirmRemove(c) : void move(c, s))}
+                              />
+                            ),
+                          )}
+                        </ul>
+                      </div>
+                    );
+                  })}
                 </div>
               );
             })}

@@ -1,4 +1,4 @@
-import { recordCreated, setStatus } from "@jd/apply";
+import { impliesApplied, recordCreated, setStatus } from "@jd/apply";
 import { APPLICATION_STATUSES } from "@jd/core";
 import { getDb, one, returned, schema } from "@jd/core/db";
 import { and, eq } from "drizzle-orm";
@@ -39,7 +39,7 @@ export function PUT(req: Request) {
           searchId: dashboard?.id ?? null,
           status,
           source: "app",
-          appliedAt: status === "applied" ? new Date() : null,
+          appliedAt: impliesApplied(status, "manual") ? new Date() : null,
           notes: notes ?? null,
         })
         .returning(),

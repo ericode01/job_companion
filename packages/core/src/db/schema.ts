@@ -326,6 +326,9 @@ export const applicationEvent = pgTable(
     toStatus: text("to_status").$type<ApplicationStatus>().notNull(),
     source: text("source").$type<StatusEventSource>().notNull(),
     emailId: integer("email_id").references((): AnyPgColumn => emailMessage.id, { onDelete: "set null" }),
+    /** This move filled the applied / confirmed date (dates are only ever filled from empty), so undo clears it. */
+    filledAppliedAt: boolean("filled_applied_at").notNull().default(false),
+    filledConfirmedAt: boolean("filled_confirmed_at").notNull().default(false),
     revertedAt: ts("reverted_at"),
     createdAt: createdAt(),
   },

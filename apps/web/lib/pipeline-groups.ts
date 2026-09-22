@@ -59,3 +59,24 @@ export function groupColumn(columnKey: string, cards: PipelineCard[], opts: { gr
     .map((bucket) => ({ bucket, label: groupLabel(columnKey, bucket), cards: sorted.filter((c) => bucketOf(c, now) === bucket) }))
     .filter((g) => g.cards.length > 0);
 }
+
+/** A group you folded, remembered per browser: "applied:quiet". */
+export function foldKey(columnKey: string, bucket: Bucket): string {
+  return `${columnKey}:${bucket}`;
+}
+
+/** The folded groups as stored. Anything unreadable means nothing is folded, never an error. */
+export function parseFolded(raw: string | null): Set<string> {
+  if (!raw) return new Set();
+  try {
+    const value: unknown = JSON.parse(raw);
+    return new Set(Array.isArray(value) ? value.filter((k): k is string => typeof k === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
+
+/** Cards with an email waiting on you, so a folded group can still say it's hiding one. */
+export function needsReplyCount(cards: Pick<PipelineCard, "openActions">[]): number {
+  return cards.filter((c) => c.openActions > 0).length;
+}

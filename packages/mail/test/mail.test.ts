@@ -366,6 +366,40 @@ describe("processing emails into the pipeline", () => {
     expect(await one(getDb().select().from(schema.application).where(eq(schema.application.id, out.created!.id)))).toBeUndefined();
   });
 
+  it("puts back the dates an undone move filled", async () => {
+    const a = await newApp({ companyName: "Initech", jobTitle: "Backend Engineer" });
+    const received = new Date(Date.now() - 2 * 86_400_000);
+    await mail.processEmail(conn, email({ fromAddress: "jobs@initech.example", receivedAt: received }), cls({ kind: "application_received", companyName: "Initech", jobTitle: "Backend Engineer" }), "llm", await mail.trackedApplications(userId));
+    expect(await app(a.id)).toMatchObject({ status: "applied", appliedAt: received, confirmedAt: received });
+    const ev = (await applicationEvents(a.id))[0]!;
+    expect(ev).toMatchObject({ filledAppliedAt: true, filledConfirmedAt: true });
+    expect(await undoEvent(userId, ev.id)).toEqual({ ok: true });
+    expect(await app(a.id)).toMatchObject({ status: "applying", appliedAt: null, confirmedAt: null });
+  });
+
+  it("fills the applied date when a move skips Applied, but not when you close a card yourself", async () => {
+    const skipped = await newApp({ companyName: "Tyrell", jobTitle: "Replicant Designer", status: "saved" });
+    await setStatus(skipped.id, "interview", { source: "manual" });
+    const appliedAt = (await app(skipped.id)).appliedAt;
+    expect(appliedAt).toBeInstanceOf(Date);
+
+    const closed = await newApp({ companyName: "Tyrell", jobTitle: "Owl Keeper", status: "saved" });
+    await setStatus(closed.id, "rejected", { source: "manual" });
+    expect((await app(closed.id)).appliedAt).toBeNull();
+
+    // A move recorded before events noted their dates undoes as it always did: status only.
+    const ev = (await applicationEvents(skipped.id))[0]!;
+    await getDb().update(schema.applicationEvent).set({ filledAppliedAt: false }).where(eq(schema.applicationEvent.id, ev.id));
+    expect(await undoEvent(userId, ev.id)).toEqual({ ok: true });
+    expect(await app(skipped.id)).toMatchObject({ status: "saved", appliedAt });
+  });
+
+  it("dates an application an interview email added by that email", async () => {
+    const received = new Date(Date.now() - 5 * 86_400_000);
+    const out = await mail.processEmail(conn, email({ fromAddress: "talent@wonka.example", receivedAt: received }), cls({ kind: "interview_request", round: "recruiter_call", companyName: "Wonka", jobTitle: "Chocolatier" }), "llm", await mail.trackedApplications(userId));
+    expect(await app(out.created!.id)).toMatchObject({ status: "interview", appliedAt: received, confirmedAt: null });
+  });
+
   it("keeps only ids for unrelated mail, and keeps people's email apart", async () => {
     const out = await mail.processEmail(conn, email({ subject: "Sale", text: "50% off" }), cls({ jobRelated: false, kind: "unrelated" }), "llm", []);
     expect(out.row).toBeNull();

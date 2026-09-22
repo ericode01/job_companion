@@ -18,30 +18,54 @@ export const STAGE_RANK: Record<ApplicationStatus, number> = {
 };
 
 /**
- * The one way an application's status changes: sets appliedAt the first time it reaches
- * Applied and records the move, so it can be undone and shown ("moved by an email from …").
+ * Whether reaching this status means you applied: Applied or any later stage, or a rejection an
+ * email reported (they don't reject what you never sent). Closing a card yourself doesn't count:
+ * rejecting a Saved job isn't applying to it.
+ */
+export function impliesApplied(status: ApplicationStatus, source: StatusEventSource): boolean {
+  return status === "applied" || status === "interview" || status === "offer" || (status === "rejected" && source === "email");
+}
+
+/**
+ * The one way an application's status changes. Fills the applied date the first time a move
+ * implies you applied (skipping Applied included) and, for a confirmation email, the confirmed
+ * date; records the move, and which dates it filled, so it can be undone and shown ("moved by an
+ * email from …").
  */
 export async function setStatus(
   applicationId: number,
   to: ApplicationStatus,
-  opts: { source: StatusEventSource; emailId?: number | null; appliedAt?: Date | null },
+  opts: { source: StatusEventSource; emailId?: number | null; appliedAt?: Date | null; confirmedAt?: Date | null },
 ): Promise<Application> {
   const db = getDb();
   return await db.transaction(async (tx) => {
     const app = await one(tx.select().from(schema.application).where(eq(schema.application.id, applicationId)));
     if (!app) throw new Error(`Application ${applicationId} not found`);
     if (app.status === to) return app;
-    const appliedAt = app.appliedAt ?? (to === "applied" ? (opts.appliedAt ?? new Date()) : (opts.appliedAt ?? null));
+    // Dates are only ever filled from empty, never rewritten, so undo can simply clear what it filled.
+    const fillApplied = !app.appliedAt && impliesApplied(to, opts.source);
+    const fillConfirmed = !app.confirmedAt && Boolean(opts.confirmedAt);
     const updated = await returned(
       tx
         .update(schema.application)
-        .set({ status: to, appliedAt, updatedAt: new Date() })
+        .set({
+          status: to,
+          ...(fillApplied ? { appliedAt: opts.appliedAt ?? new Date() } : {}),
+          ...(fillConfirmed ? { confirmedAt: opts.confirmedAt } : {}),
+          updatedAt: new Date(),
+        })
         .where(eq(schema.application.id, applicationId))
         .returning(),
     );
-    await tx
-      .insert(schema.applicationEvent)
-      .values({ applicationId, fromStatus: app.status, toStatus: to, source: opts.source, emailId: opts.emailId ?? null });
+    await tx.insert(schema.applicationEvent).values({
+      applicationId,
+      fromStatus: app.status,
+      toStatus: to,
+      source: opts.source,
+      emailId: opts.emailId ?? null,
+      filledAppliedAt: fillApplied,
+      filledConfirmedAt: fillConfirmed,
+    });
     return updated;
   });
 }
@@ -78,8 +102,8 @@ export async function applicationEvents(applicationId: number): Promise<Applicat
 }
 
 /**
- * Undoes an automatic move. A move back only happens if nothing has moved the card since; an
- * application that an email created is removed again, and its emails are set aside.
+ * Undoes an automatic move, with any date it filled. A move back only happens if nothing has moved
+ * the card since; an application that an email created is removed again, and its emails are set aside.
  */
 export async function undoEvent(userId: number, eventId: number): Promise<{ ok: boolean; removed?: boolean; reason?: string }> {
   const db = getDb();
@@ -103,7 +127,16 @@ export async function undoEvent(userId: number, eventId: number): Promise<{ ok: 
   }
   if (app.status !== event.toStatus) return { ok: false, reason: "The card has moved since, so this can't be undone." };
   await db.transaction(async (tx) => {
-    await tx.update(schema.application).set({ status: event.fromStatus!, updatedAt: new Date() }).where(eq(schema.application.id, app.id));
+    await tx
+      .update(schema.application)
+      .set({
+        status: event.fromStatus!,
+        // Only what this move filled: nothing since has moved the card, and nothing rewrites a filled date.
+        ...(event.filledAppliedAt ? { appliedAt: null } : {}),
+        ...(event.filledConfirmedAt ? { confirmedAt: null } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.application.id, app.id));
     await tx.update(schema.applicationEvent).set({ revertedAt: new Date() }).where(eq(schema.applicationEvent.id, event.id));
     // The email stays, but it no longer counts as having decided this card.
     if (event.emailId) await tx.update(schema.emailMessage).set({ reviewState: "confirmed" }).where(eq(schema.emailMessage.id, event.emailId));

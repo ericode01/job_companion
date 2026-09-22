@@ -622,6 +622,7 @@ Each person can connect their own mailbox, read-only. Job emails keep their pipe
 3. **Classify** (`classify.ts`). One Haiku call per remaining email, structured output (`EmailClassificationSchema`): kind, interview round, company, title, the matching application, event time, action and deadline, a one-line summary, and confidence. The email is treated as untrusted data. Without an API key a regex classifier runs, and its results always go to review.
 4. **Link** (`link.ts`). The same thread → a job-board URL (`matchJobByUrl`, now including Workday and SmartRecruiters) → the classifier's pick when the company agrees → the company by name or sender domain, then the closest title. Ties go to review. No match plus a kind that implies an application → a new application with `source='email'`, linked to a known job only when the title overlap is ≥ 0.75.
 5. **Apply** (`status.ts`, `process.ts`). Moves are written through `setStatus()` with an `application_event` row, which gives the history, undo, and the manual-move rule. A later round, an offer or a rejection closes earlier rounds' open actions.
+   - **Dates.** `appliedAt` is filled the first time a card reaches a status that implies you applied (`impliesApplied`: Applied, Interview, Offer, or a rejection an email reported, not one you set yourself), so skipping Applied still dates it; an email move uses the email's time. `confirmedAt` comes from a confirmation email, written in the same `setStatus` call as the move. Both are only ever filled from empty, so each event records whether it filled them (`filled_applied_at`, `filled_confirmed_at`) and undo clears exactly those. Migration 0002 backfilled cards that had skipped Applied, from the earlier of the move and the first email about them.
 
 Checks run as `sync_mailbox` tasks: every `intervalMinutes` per mailbox, and right away on connect or "Check now". Up to `maxClassifyPerRun` emails are read per check, with a 7-minute time budget; the cursor only advances after a complete pass, so nothing is skipped. Hitting the AI spend limit pauses the check without losing its place.
 
@@ -677,7 +678,8 @@ gone quiet — neither has anything to do with which search found the job. Split
   week" / "Waiting 1–3 weeks" / "Silent 3+ weeks" for columns where you're waiting on them, "Added
   this week" / "1–3 weeks old" / "Stalled 3+ weeks" where you're the holdup. Grouping starts at six
   cards; inside a group, cards needing a reply come first, then the most recent activity. Rejected
-  stays one compact, collapsed list.
+  stays one compact, collapsed list. Each group header folds its cards away, remembered per browser;
+  a folded group that holds a card needing a reply says so on its header, so folding never hides it.
 - **Queries lost their `searchId` option** (`openActions`, `reviewQueue`, `emailChangesSince`); rows
   carry `searchId` and the browser filters. `GET /api/pipeline` replaced
   `GET /api/searches/:id/pipeline`; the Next-step card's application steps count all searches.

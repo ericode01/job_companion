@@ -15,6 +15,13 @@
       "when": 1789969376581,
       "tag": "0001_task_live_key",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790096426915,
+      "tag": "0002_event_filled_dates",
+      "breakpoints": true
     }
   ]
 }

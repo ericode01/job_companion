@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { PipelineCard } from "../lib/pipeline-types";
 import { formatFactValue } from "../lib/format";
-import { bucketOf, GROUP_AT, groupColumn, groupLabel } from "../lib/pipeline-groups";
+import { bucketOf, foldKey, GROUP_AT, groupColumn, groupLabel, needsReplyCount, parseFolded } from "../lib/pipeline-groups";
 
 const NOW = Date.parse("2026-09-19T12:00:00Z");
 const daysAgo = (n: number) => new Date(NOW - n * 86_400_000).toISOString();
@@ -92,5 +92,22 @@ describe("fact formatting", () => {
     expect(formatFactValue("Headcount", "1705")).toBe("1705");
     expect(formatFactValue("Headcount", "110000")).toBe("110000");
     expect(formatFactValue("Total funding", "Undisclosed, founded 2022")).toBe("Undisclosed, founded 2022");
+  });
+});
+
+describe("folding date groups", () => {
+  it("remembers folds by column and group, and shrugs off storage it can't read", () => {
+    expect(foldKey("applied", "quiet")).toBe("applied:quiet");
+    expect([...parseFolded(JSON.stringify(["applied:quiet", "applying:waiting"]))]).toEqual(["applied:quiet", "applying:waiting"]);
+    expect(parseFolded(null).size).toBe(0);
+    expect(parseFolded("").size).toBe(0);
+    expect(parseFolded("{not json").size).toBe(0);
+    expect(parseFolded(JSON.stringify({ applied: true })).size).toBe(0);
+    expect([...parseFolded(JSON.stringify(["applied:quiet", 3, null]))]).toEqual(["applied:quiet"]);
+  });
+
+  it("counts what a folded group is hiding that needs a reply", () => {
+    expect(needsReplyCount([card(1, { openActions: 2 }), card(2), card(3, { openActions: 1 })])).toBe(2);
+    expect(needsReplyCount([])).toBe(0);
   });
 });

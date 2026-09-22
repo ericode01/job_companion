@@ -417,6 +417,12 @@ The refresh followed data from the ui-ux-pro-max repo. I read its CSVs directly 
    4. asks the app to answer the rest
    5. shows a review panel
    - It never submits. It detects the confirmation page and marks the job Applied.
+4. **When you come back** (`ApplyDialog`): the extension is the only thing that can notice a
+   submission, and only on a board it fills, with a confirmation page it recognises. Everyone else's
+   card would sit in Applying for good. So on returning to the tab the dialog re-reads the
+   application: already Applied (the extension got there first) and it says so; otherwise it asks
+   "Did you submit your application?" and one button records it, as an ordinary manual move. With the
+   extension the same button is there, worded as a fallback.
 
 ### Answering questions (server, `packages/apply`)
 Questions are answered in this order:

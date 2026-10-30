@@ -653,7 +653,7 @@ Dates come back in the person's time zone: a bare deadline date means the end of
 
 - **`/mailbox`**: benefits, a "What I can and can't do" panel, a look-back picker, Connect Gmail, and an app-password form with per-provider instructions. Once connected: progress, a summary of what was found, Check now / Pause / Disconnect, and "Check these".
 - **Pipeline** (`/pipeline`): the Needs-your-reply strip, "Check these", "From your email this week" with undo, card chips (Action needed, No confirmation, Applied elsewhere, rounds, email count), and a collapsible Rejected column (remembered per browser).
-  - **No confirmation** replaced a ✓ Confirmed chip that marked the normal case (23 of 24 Applied cards had one) and meant nothing past Applied, where an interview invitation already proves the application arrived. The flag is the silence instead (`missingConfirmation`, `lib/pipeline-groups.ts`): still at Applied, no confirmation, no mail at all about it, sent by you rather than found in email, a week gone, and a connected mailbox that isn't asking to be reconnected. Anything less and it would cry wolf. The application panel keeps the dated "Confirmed <date>" line, which is a history rather than a badge.
+  - **No confirmation** replaced a ✓ Confirmed chip that marked the normal case (nearly every Applied card had one) and meant nothing past Applied, where an interview invitation already proves the application arrived. The flag is the silence instead (`missingConfirmation`, `lib/pipeline-groups.ts`): still at Applied, no confirmation, no mail at all about it, sent by you rather than found in email, a week gone, and a connected mailbox that isn't asking to be reconnected. Anything less and it would cry wolf. The application panel keeps the dated "Confirmed <date>" line, which is a history rather than a badge.
 - **Application panel** (`?app=` deep link): status, which search, posting links or "Link to a job posting", round tracker, emails grouped by stage with an action box, Open in Gmail / Open in Mail / Reply, "This is wrong", and history with undo.
 - **Elsewhere**: the job page shows the same timeline. The header's Pipeline item shows the "to reply" count, the Email tab is now "Digest", onboarding's last step offers to connect the inbox, and Admin → Mailbox sync has the Google setup steps, settings and connection health.
 
@@ -693,8 +693,8 @@ gone quiet — neither has anything to do with which search found the job. Split
 
 ## 22. UX pass on the whole app (v9.1)
 
-A review of the running app against real data (50 applications, 114 emails, 101 matches) found
-thirteen issues, fixed in three batches.
+A review of the running app against a real install's data found thirteen issues, fixed in three
+batches.
 
 ### Trust
 - A pipeline move or "Done" the server refused used to revert in silence. Both keep the optimistic
@@ -733,17 +733,16 @@ headers sat on the cards inside it (they pin only where the page itself scrolls)
 
 ## 23. Choosing a model per job, and paying less for it (v10)
 
-Four days of real use cost **$17.60 over 1,031 calls**, and most of it was frontier-model work on
-tasks that don't need one. From `llm_usage`:
+Four days of real use, measured from `llm_usage`, were mostly frontier-model work on tasks that
+don't need one:
 
-| purpose | model | calls | cost | after |
-|---|---|---:|---:|---:|
-| company_research (+ structuring) | claude-sonnet-5 | 70 | $11.13 | **$2.79** |
-| fit_score | claude-haiku-4-5 | 760 | $4.99 | $4.99 |
-| email_classify | claude-haiku-4-5 | 114 | $0.48 | **$0.03** |
-| job summaries, form answers, searches | claude-haiku-4-5 | 73 | $0.26 | **$0.03** |
-| cover letters, tailoring, resume PDFs | claude-sonnet-5 | 14 | $0.74 | $0.74 |
-| **total** | | **1,031** | **$17.60** | **$8.58** |
+| purpose | model | share of spend | after |
+|---|---|---:|---|
+| company_research (+ structuring) | claude-sonnet-5 | ~63% | **−75%**: $0.085 a company measured, was $0.337 |
+| fit_score | claude-haiku-4-5 | ~28% | unchanged |
+| email_classify | claude-haiku-4-5 | ~3% | **−94%** |
+| job summaries, form answers, searches | claude-haiku-4-5 | ~2% | **−88%** |
+| cover letters, tailoring, resume PDFs | claude-sonnet-5 | ~4% | unchanged |
 
 About **−51%**, from a measured per-company research cost and a measured per-email sorting cost, not
 from a price list. It is less than the −70% this started out aiming for, and the gap is entirely fit
@@ -950,9 +949,9 @@ PDFs into the file store (rewriting `resume.file_path` to a storage key). It the
 and compares it with its SQLite original as a multiset of canonical fingerprints — no dependence on
 row order or collation — and confirms each sequence is past its table's highest id.
 
-On this install's data: **26 tables, 37,964 rows, every row identical, in 23s** against Postgres 17, and the same again against 18.
+On a real install's data: **all 26 tables, every row identical, in 23s** against Postgres 17, and the same again against 18.
 It refuses a non-empty target, and changing one value or deleting one row in the copy is reported as
-exactly that. Postgres comes out at **336MB against SQLite's 512MB**: TOAST compresses the job
+exactly that. Postgres comes out about a third smaller than the SQLite file: TOAST compresses the job
 descriptions that make up nearly all of it.
 
 ### Postgres 18
